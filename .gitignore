@@ -2,3 +2,5 @@
 /data/
 /outputs/
 /src/discard/
+/.idea/*
+src/__pycache__/
