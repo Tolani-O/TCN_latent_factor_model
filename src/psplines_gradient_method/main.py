@@ -16,15 +16,16 @@ intensity, binned, spikes = sd.generate_spike_train(time, spike_type='2peaks', n
 
 # Manual Implementation
 Y = binned  # K x T
-B = generate_bsplines(time, degree)  # T x T. The coefficient (beta) will be regularized
+B = generate_bsplines(time, degree, time[1]-time[0])  # T x T. The coefficient (beta) will be regularized
 start = 0
-for i in range(T):
-    plt.plot(time, B[i+start, :])
+num_basis = 10
+for i in range(num_basis):
+    plt.plot(time[start:(start+num_basis)], B[i+start, start:(start+num_basis)])
 plt.show()
-#check if any element of B is less than 0
-a=np.any(B < 0)
+# check if any element of B is less than 0
+a = np.any(B < 0)
 # check which element of B is less than 0
-b=np.where(B < 0)
+b = np.where(B < 0)
 
 G = np.random.rand(K, L)
 beta = np.random.rand(L, T)
