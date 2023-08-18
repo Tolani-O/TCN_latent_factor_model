@@ -16,7 +16,7 @@ intensity, binned, spikes = sd.generate_spike_train(time, spike_type='2peaks', n
 
 # Manual Implementation
 Y = binned  # K x T
-B = generate_bsplines(time, degree, time[1]-time[0])  # T x T. The coefficient (beta) will be regularized
+B = generate_bsplines(time, degree)  # T x T. The coefficient (beta) will be regularized
 start = 0
 num_basis = 10
 for i in range(num_basis):
