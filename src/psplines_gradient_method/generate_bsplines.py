@@ -2,15 +2,14 @@ import numpy as np
 from scipy.interpolate import BSpline
 
 
-def generate_bsplines(time, k):
+def generate_bsplines(time, degree):
     """
     Generate a set of B-splines with knots c and degree k evaluated at t.
     """
     B = []
-    dt = time[1] - time[0]
-    knots = np.concatenate([np.flip([time[0] - (i + 1) * dt for i in range(k)]), time,
-                            [time[-1] + (i + 1) * dt for i in range(k + 2)]])
-    for i in range(len(knots) - 2 * k):
+    k = degree
+    knots = np.concatenate([np.repeat(time[0], k), time, np.repeat(time[-1], k)])
+    for i in range(len(knots) - (k+2)):
         b = BSpline.basis_element(knots[i:(i + k + 2)], False)
         val = b(time)
         B.append(val)
