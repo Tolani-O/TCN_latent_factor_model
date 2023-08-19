@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def generate_spike_trains(latent_factors, coeff, bias, ratio, num_trials=100):
+def generate_spike_trains(latent_factors, coeff, bias, ratio, num_trials):
 
     num_factors, num_timesteps = latent_factors.shape
     if num_factors == 1:
