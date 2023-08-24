@@ -49,7 +49,7 @@ def compute_lambda(B, d, G, beta):
 
 
 def compute_latent_factors(B, beta):
-    N = np.dot(beta, B)
+    N = beta @ B
     return N
 
 
