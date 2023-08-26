@@ -1,7 +1,10 @@
+# Main comparison experiment between prior on beta and penalty on beta
 import numpy as np
 import src.simulate_data as sd
-from src.psplines_gradient_method.manual_implemetation import log_prob, compute_lambda, compute_latent_factors, \
-    compute_numerical_grad, log_obj, create_precision_matrix, create_first_diff_matrix, create_second_diff_matrix
+from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj
+from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_second_diff_matrix, \
+    compute_lambda, compute_latent_factors, compute_numerical_grad
+from src.psplines_gradient_method.cvxpy_implementation import create_precision_matrix
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
 from numpy.linalg import det
