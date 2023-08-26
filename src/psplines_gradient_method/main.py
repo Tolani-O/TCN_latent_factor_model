@@ -1,7 +1,8 @@
 import numpy as np
 import src.simulate_data as sd
-from src.psplines_gradient_method.manual_implemetation import log_prob, compute_lambda, compute_latent_factors, \
-    compute_numerical_grad, log_obj
+from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj
+from src.psplines_gradient_method.general_functions import compute_lambda, compute_latent_factors, \
+    compute_numerical_grad
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
 
@@ -111,15 +112,3 @@ for i in range(L):
 # for i in range(L):
 #     plt.plot(time, latent_factors_manual[i, :])
 # plt.show()
-
-
-# def horseshoe_prior(shape):
-#   tau = torch.tensor(1.0)
-#   lambdas = HalfCauchy(torch.zeros(shape), torch.ones(shape)).sample()
-#   return Normal(torch.zeros(shape), tau * lambdas)
-#
-# # Log prior probability
-# log_prior_G = horseshoe_prior(G.shape).log_prob(G).sum()
-#
-# # G = horseshoe_prior([K, L]).sample()
-
