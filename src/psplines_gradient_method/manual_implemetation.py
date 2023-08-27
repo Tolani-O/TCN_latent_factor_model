@@ -41,7 +41,7 @@ def log_prob(Y, B, d, G, beta, beta_tausq, dt):
     return result
 
 
-def log_obj(Y, B, d, G, beta, beta_tausq, eta, smooth, dt):
+def log_obj(Y, B, d, G, beta, beta_tausq, eta, G_smooth, dt):
     L, P = beta.shape
     J = np.ones_like(Y)
     diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
@@ -60,21 +60,21 @@ def log_obj(Y, B, d, G, beta, beta_tausq, eta, smooth, dt):
     y_minus_lambdadt_times_B = y_minus_lambdadt @ B.T
 
     dLogL_dd = np.sum(y_minus_lambdadt, axis=1)
-    d_plus = d + (1/smooth) * dLogL_dd
+    d_plus = d + (1/1000) * dLogL_dd
     dlogL_dG = y_minus_lambdadt_times_B @ beta.T
-    G_minus = G + (1/smooth) * dlogL_dG
-    G_plus = np.maximum(np.abs(G_minus) - eta/smooth, 0) * np.sign(G_minus)
+    G_minus = G + (1/G_smooth) * dlogL_dG
+    G_plus = np.maximum(np.abs(G_minus) - eta/G_smooth, 0) * np.sign(G_minus)
     dlogL_dbeta = (G.T @ y_minus_lambdadt_times_B -
                    2 * beta_tausq[:, np.newaxis] * beta @ Omega)
-    beta_minus = beta + (1/smooth) * dlogL_dbeta
+    beta_minus = beta + (1/1000) * dlogL_dbeta
     beta_plus = np.maximum(beta_minus, 0)
 
     result = {
-        "dLogL_dd": -dLogL_dd,
+        "dLogL_dd": dLogL_dd,
         "d_plus": d_plus,
-        "dlogL_dG": -dlogL_dG,
+        "dlogL_dG": dlogL_dG,
         "G_plus": G_plus,
-        "dlogL_dbeta": -dlogL_dbeta,
+        "dlogL_dbeta": dlogL_dbeta,
         "beta_plus": beta_plus,
         "dlogL_beta_tausq": 0,
         "loss": loss,

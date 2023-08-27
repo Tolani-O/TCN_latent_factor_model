@@ -10,8 +10,7 @@ K, degree, T = 100, 3, 200
 intensity_type = ('constant', '1peak', '2peaks')
 L = len(intensity_type)
 # Training hyperparameters
-learning_rate = 1e-3
-num_epochs = 50000
+num_epochs = 40000
 # base firing rate
 time = np.arange(0, T, 1)/100
 dt = time[1] - time[0]
@@ -44,8 +43,10 @@ G_grads = []
 beta_grads = []
 d_grads = []
 tausq_grads = []
+G_smooths = []
+beta_smooths = []
+d_smooths = []
 losses = []
-smooths = []
 eps=1e-4
 for epoch in range(num_epochs):
     # Forward pass and gradient computation
@@ -68,20 +69,23 @@ for epoch in range(num_epochs):
     result = log_obj(Y, B, d, G, beta, tausq, 2, 200, dt)
     loss = result["loss"]
     dd = result["dLogL_dd"]
-    d_plus = result["d_plus"]
     dG = result["dlogL_dG"]
-    G_plus = result["G_plus"]
     dbeta = result["dlogL_dbeta"]
-    beta_plus = result["beta_plus"]
     log_likelihood = result["log_likelihood"]
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
 
     if epoch > 0:
-        smooths.append(np.linalg.norm(dG - prev_dG, ord=2) / np.linalg.norm(G - prev_G, ord=2))
+        G_smooths.append(np.linalg.norm(dG - prev_dG, ord=2) / np.linalg.norm(G - prev_G, ord=2))
+        beta_smooths.append(np.linalg.norm(dbeta - prev_dbeta, ord=2) / np.linalg.norm(beta - prev_beta, ord=2))
+        d_smooths.append(np.linalg.norm(dd - prev_dd, ord=2) / np.linalg.norm(d - prev_d, ord=2))
 
     prev_G = np.copy(G)
     prev_dG = np.copy(dG)
+    prev_beta = np.copy(beta)
+    prev_dbeta = np.copy(dbeta)
+    prev_d = np.copy(d)
+    prev_dd = np.copy(dd)
 
     # # verify gradient using finite difference
     # dd_num, dG_num, dbeta_num, _ = compute_numerical_grad(Y, B, d, G, beta, tausq, dt, log_obj, eps)
@@ -94,9 +98,12 @@ for epoch in range(num_epochs):
     # print(f"Epoch {epoch}, dd_error {dd_error}, dG_error {dG_error}, dbeta_error {dbeta_error}")
 
     # Update parameters using gradients
-    d -= learning_rate * dd
-    G = np.copy(G_plus)
-    beta = np.copy(beta_plus)
+    d = result["d_plus"]
+    G = result["G_plus"]
+    beta = result["beta_plus"]
+    # d = np.copy(dd)
+    # G = np.copy(G_plus)
+    # beta = np.copy(beta_plus)
     # tausq -= learning_rate * dtausq
     # Store losses and gradients
     losses.append(loss)
@@ -105,7 +112,11 @@ for epoch in range(num_epochs):
 
 plt.plot(np.arange(10000, num_epochs), losses[10000:])
 plt.show()
-plt.plot(np.arange(1, num_epochs), smooths)
+plt.plot(np.arange(1, num_epochs), G_smooths)
+plt.show()
+plt.plot(np.arange(1, num_epochs), beta_smooths)
+plt.show()
+plt.plot(np.arange(1, num_epochs), d_smooths)
 plt.show()
 
 lambda_manual = compute_lambda(B, d, G, beta)
