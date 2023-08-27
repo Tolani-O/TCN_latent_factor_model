@@ -41,7 +41,7 @@ def log_prob(Y, B, d, G, beta, beta_tausq, dt):
     return result
 
 
-def log_obj(Y, B, d, G, beta, beta_tausq, dt):
+def log_obj(Y, B, d, G, beta, beta_tausq, eta, smooth, dt):
     L, P = beta.shape
     J = np.ones_like(Y)
     diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
@@ -51,26 +51,36 @@ def log_obj(Y, B, d, G, beta, beta_tausq, dt):
     BetaOmegaBeta = beta @ Omega @ beta.T
 
     log_likelihood = np.sum(diagdJ_plus_GBetaB * Y - lambda_del_t)
-    penalty = - beta_tausq.T @ np.diag(BetaOmegaBeta)
-    loss = log_likelihood + penalty
+    beta_penalty = - beta_tausq.T @ np.diag(BetaOmegaBeta)
+    G_penalty = - eta * np.linalg.norm(G, ord=1)
+    loss = log_likelihood + beta_penalty + G_penalty
 
     # Manual gradients
     y_minus_lambdadt = Y - lambda_del_t
     y_minus_lambdadt_times_B = y_minus_lambdadt @ B.T
 
     dLogL_dd = np.sum(y_minus_lambdadt, axis=1)
+    d_plus = d + (1/smooth) * dLogL_dd
     dlogL_dG = y_minus_lambdadt_times_B @ beta.T
+    G_minus = G + (1/smooth) * dlogL_dG
+    G_plus = np.maximum(np.abs(G_minus) - eta/smooth, 0) * np.sign(G_minus)
     dlogL_dbeta = (G.T @ y_minus_lambdadt_times_B -
                    2 * beta_tausq[:, np.newaxis] * beta @ Omega)
+    beta_minus = beta + (1/smooth) * dlogL_dbeta
+    beta_plus = np.maximum(beta_minus, 0)
 
     result = {
         "dLogL_dd": -dLogL_dd,
+        "d_plus": d_plus,
         "dlogL_dG": -dlogL_dG,
+        "G_plus": G_plus,
         "dlogL_dbeta": -dlogL_dbeta,
+        "beta_plus": beta_plus,
         "dlogL_beta_tausq": 0,
         "loss": loss,
         "log_likelihood": log_likelihood,
-        "penalty": penalty
+        "beta_penalty": beta_penalty,
+        "G_penalty": G_penalty
     }
 
     return result

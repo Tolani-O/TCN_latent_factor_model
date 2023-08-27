@@ -15,5 +15,7 @@ def generate_bsplines(time, degree):
         B.append(val)
 
     B = np.nan_to_num(np.vstack(B))  # already adds up to 1
+    # set the last element to 1
+    B[-1, -1] = 1
 
     return B

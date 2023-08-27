@@ -45,6 +45,7 @@ beta_grads = []
 d_grads = []
 tausq_grads = []
 losses = []
+smooths = []
 eps=1e-4
 for epoch in range(num_epochs):
     # Forward pass and gradient computation
@@ -64,11 +65,23 @@ for epoch in range(num_epochs):
     # # tausq_grads.append(dtausq_error)
     # # print(f"Epoch {epoch}, dd_error {dd_error}, dG_error {dG_error}, dbeta_error {dbeta_error}, dtausq_error {dtausq_error}")
 
-    result = log_obj(Y, B, d, G, beta, tausq, dt)
-    loss, dd, dG, dbeta, lk, lp = (
-        result["loss"], result["dLogL_dd"], result["dlogL_dG"], result["dlogL_dbeta"], result["log_likelihood"], result["penalty"])
-    # epoch=0
-    # print(f"Epoch {epoch}, loss {lk}, penalty {lp}")
+    result = log_obj(Y, B, d, G, beta, tausq, 2, 200, dt)
+    loss = result["loss"]
+    dd = result["dLogL_dd"]
+    d_plus = result["d_plus"]
+    dG = result["dlogL_dG"]
+    G_plus = result["G_plus"]
+    dbeta = result["dlogL_dbeta"]
+    beta_plus = result["beta_plus"]
+    log_likelihood = result["log_likelihood"]
+    beta_penalty = result["beta_penalty"]
+    G_penalty = result["G_penalty"]
+
+    if epoch > 0:
+        smooths.append(np.linalg.norm(dG - prev_dG, ord=2) / np.linalg.norm(G - prev_G, ord=2))
+
+    prev_G = np.copy(G)
+    prev_dG = np.copy(dG)
 
     # # verify gradient using finite difference
     # dd_num, dG_num, dbeta_num, _ = compute_numerical_grad(Y, B, d, G, beta, tausq, dt, log_obj, eps)
@@ -82,15 +95,17 @@ for epoch in range(num_epochs):
 
     # Update parameters using gradients
     d -= learning_rate * dd
-    G -= learning_rate * dG
-    beta -= learning_rate * dbeta
+    G = np.copy(G_plus)
+    beta = np.copy(beta_plus)
     # tausq -= learning_rate * dtausq
     # Store losses and gradients
     losses.append(loss)
     if epoch % 1000 == 0:
         print(f"Epoch {epoch}, Loss {loss}")
 
-plt.plot(np.arange(0, num_epochs), losses)
+plt.plot(np.arange(10000, num_epochs), losses[10000:])
+plt.show()
+plt.plot(np.arange(1, num_epochs), smooths)
 plt.show()
 
 lambda_manual = compute_lambda(B, d, G, beta)
