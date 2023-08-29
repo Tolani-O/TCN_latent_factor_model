@@ -4,14 +4,13 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
-
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
 # PROJECT EPOCH
 
-output_dir = os.path.join(os.getcwd(), '../outputs')
-input_dir = os.path.join(os.getcwd(), '../data')
-manifest_path = os.path.join(input_dir, "manifest.json")
+output_dir = 'outputs'
+input_dir = 'data'
+manifest_path = os.path.join(input_dir, 'manifest.json')
 cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
 
 sessions = cache.get_session_table()
@@ -145,6 +144,9 @@ unit_ids = drifting_gratings_spike_times['unit_id'].unique()
 drifting_gratings_spike_counts = session_data. \
     presentationwise_spike_counts(stimulus_presentation_ids=drifting_gratings_presentation_ids.index.values,
                                  bin_edges=time_bin_edges, unit_ids=unit_ids)
+#plot data for one stimulus presentation id
+drifting_gratings_spike_counts.sel(stimulus_presentation_id=31007).plot(x='time_bin', y='unit_id')
+
 
 #in the dataArray above, sum over the stimulus_presentation_id dimension
 drifting_gratings_spike_hist = drifting_gratings_spike_counts.sum(dim='stimulus_presentation_id'). \
