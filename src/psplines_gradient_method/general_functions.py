@@ -13,6 +13,7 @@ def create_precision_matrix(P):
     Omega[-1, -1] = 1
     return Omega
 
+
 def create_first_diff_matrix(P):
     D = np.zeros((P-1, P))
     # fill the main diagonal with -1s
@@ -32,18 +33,6 @@ def create_second_diff_matrix(P):
     # set the last element to 1
     D[-1, -1] = 1
     return D
-
-
-def compute_lambda(B, d, G, beta):
-    J = np.ones((len(d), B.shape[1]))
-    diagdJ_plus_GBetaB = d[:, np.newaxis] * J + np.dot(np.dot(G, beta), B)
-    lambda_ = np.exp(diagdJ_plus_GBetaB)
-    return lambda_
-
-
-def compute_latent_factors(B, beta):
-    N = beta @ B
-    return N
 
 
 def compute_numerical_grad(Y, B, d, G, beta, beta_tausq, dt, obj_func, eps=1e-6):
