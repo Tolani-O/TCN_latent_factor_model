@@ -48,13 +48,16 @@ class EcephysAnalyzer:
         self.pivoted_df = pd.pivot_table(summary, index='ecephys_session_id', columns='ecephys_structure_acronym',
                                          values='count')
         self.canrun = True
+        #return self.pivoted_df
 
-        return self.pivoted_df
-
-    def get_best_session(self):
+    def get_best_session(self, session_to_analyze=None):
         if not self.canrun:
             raise Exception('Cannot run without collating sessions first')
-        self.session_to_analyze = self.pivoted_df['VISl'].idxmax()
+        if session_to_analyze is None:
+            self.session_to_analyze = self.pivoted_df['VISl'].idxmax()
+        else:
+            self.session_to_analyze = session_to_analyze
+        print('Getting data for session: ', self.session_to_analyze)
         self.session_data = self.cache.get_session_data(self.session_to_analyze,
                                                         isi_violations_maximum=0.5,
                                                         amplitude_cutoff_maximum=0.1,
@@ -77,6 +80,7 @@ class EcephysAnalyzer:
         # join conditions to presentation_count by condition.index and presentation_count.stimulus_condition_id
         self.presentations_count = presentations_count.merge(conditions, left_on='stimulus_condition_id',
                                                              right_index=True)
+        print('Getting spike times for session: ', self.session_to_analyze)
         drifting_gratings_spike_times = self.session_data.presentationwise_spike_times(
             stimulus_presentation_ids=self.presentations.index.values).reset_index()
         drifting_gratings_spike_times_count = (
@@ -98,15 +102,71 @@ class EcephysAnalyzer:
             self.presentations, on='stimulus_presentation_id').merge(
             self.unit_ids_and_areas, on='unit_id')
         self.unit_ids_and_areas = self.drifting_gratings_spike_times[['unit_id', 'ecephys_structure_acronym']].drop_duplicates()
+        unit_id_map = {unit_id: idx+1 for idx, unit_id in enumerate(self.unit_ids_and_areas['unit_id'].unique())}
+        self.unit_ids_and_areas['unit_id_int'] = self.unit_ids_and_areas['unit_id'].map(unit_id_map)
         self.region_counts = (self.drifting_gratings_spike_times.groupby('ecephys_structure_acronym')['unit_id']
                               .nunique().reset_index(name='num_units'))
+        print('Getting spike counts for session: ', self.session_to_analyze)
         time_bin_edges = np.linspace(-0.05, 2, 2050)  # 2050 edges, 2049 bins
         # Dimensions: (stimulus_presentation_id, time_bin, unit_id)
         self.drifting_gratings_spike_counts = self.session_data.presentationwise_spike_counts(
             stimulus_presentation_ids=self.presentations.index.values,
             bin_edges=time_bin_edges,
             unit_ids=self.unit_ids_and_areas['unit_id'])
-        return self.session_to_analyze
+        #return self.session_to_analyze
+
+    def filter_spike_times(self, unit_ids, presentation_ids, regions, conditions):
+        if isinstance(unit_ids, int):
+            unit_ids = [unit_ids]
+        if isinstance(presentation_ids, int):
+            presentation_ids = [presentation_ids]
+        if isinstance(regions, str):
+            regions = [regions]
+        if isinstance(conditions, int):
+            conditions = [conditions]
+        data = self.drifting_gratings_spike_times
+        if presentation_ids is not None:
+            data = data[data['stimulus_presentation_id'].isin(presentation_ids)]
+        elif conditions is not None:
+            data = data[data['stimulus_condition_id'].isin(conditions)]
+        if unit_ids is not None:
+            unit_ids_for_index = self.unit_ids_and_areas[
+                self.unit_ids_and_areas['unit_id_int'].isin(unit_ids)]['unit_id'].values
+            data = data[data['unit_id'].isin(unit_ids_for_index)]
+        elif regions is not None:
+            data = data[data['ecephys_structure_acronym'].isin(regions)]
+        return data
+
+    def filter_spike_counts(self, unit_ids, presentation_ids, regions, conditions):
+        if isinstance(unit_ids, int):
+            unit_ids = [unit_ids]
+        if isinstance(presentation_ids, int):
+            presentation_ids = [presentation_ids]
+        if isinstance(regions, str):
+            regions = [regions]
+        if isinstance(conditions, int):
+            conditions = [conditions]
+        data = self.drifting_gratings_spike_counts
+        if presentation_ids is not None:
+            data = data.sel(stimulus_presentation_id=presentation_ids)
+        elif conditions is not None:
+            presentation_ids_for_condition = self.presentations[
+                self.presentations['stimulus_condition_id'].isin(conditions)].index.values
+            data = data.sel(stimulus_presentation_id=presentation_ids_for_condition)
+        if unit_ids is not None:
+            unit_ids_for_index = self.unit_ids_and_areas[
+                self.unit_ids_and_areas['unit_id_int'].isin(unit_ids)]['unit_id'].values
+            data = data.sel(unit_id=unit_ids_for_index)
+        elif regions is not None:
+            unit_ids_for_region = self.unit_ids_and_areas[
+                self.unit_ids_and_areas['ecephys_structure_acronym'].isin(regions)]['unit_id'].values
+            data = data.sel(unit_id=unit_ids_for_region)
+        return data
+
+    def initialize(self):
+        self.collate_sessions()
+        self.get_best_session()
+        return self
 
     def plot_presentations_times(self):
         x_err = [self.presentations['duration'] / 2, self.presentations['duration'] / 2]
@@ -121,39 +181,26 @@ class EcephysAnalyzer:
         # Show the plot
         plt.show()
 
-    def plot_spike_times(self, region=None, condition=None, unit_id=None):
-        data = self.drifting_gratings_spike_times
-        if unit_id is not None:
-            data = data[data['unit_id'] == unit_id]
-        elif region is not None:
-            data = data[data['ecephys_structure_acronym'] == region]
-        if condition is not None:
-            data = data[data['stimulus_condition_id'] == condition]
+    def plot_spike_times(self, unit_ids=None, presentation_ids=None, regions=None, conditions=None):
+
+        data = self.filter_spike_times(conditions, presentation_ids, regions, unit_ids)
+
         data['stimulus_presentation_id'] = data['stimulus_presentation_id'].astype(str)
         data.plot(x='time_since_stimulus_presentation_onset', y='stimulus_presentation_id', kind='scatter', s=1, yticks=[])
-        plt.title(f'{region} {condition} {unit_id}')
         plt.show()
 
-    def plot_spike_counts(self, region=None, condition=None, unit_id=None, stop_time=0.5):
-        data = self.drifting_gratings_spike_counts
-        if condition is not None:
-            presentation_ids_for_condition = self.presentations[
-                self.presentations['stimulus_condition_id'] == condition].index.values
-            data = data.sel(stimulus_presentation_id=presentation_ids_for_condition)
-        if unit_id is not None:
-            data = data.sel(unit_id=unit_id)
-        elif region is not None:
-            unit_ids_for_region = self.unit_ids_and_areas[
-                self.unit_ids_and_areas['ecephys_structure_acronym'] == region]['unit_id'].values
-            data = data.sel(unit_id=unit_ids_for_region)
+    def plot_spike_counts(self, unit_ids=None, presentation_ids=None, regions=None, conditions=None, stop_time=0.5):
+
+        data = self.filter_spike_counts(unit_ids, presentation_ids, regions, conditions)
+
         # sum over the stimulus_presentation_id dimension anc convert to dataframe
         data = (data.sum(dim='stimulus_presentation_id').to_dataframe(name='spike_counts')
                 .pivot_table(index='time_relative_to_stimulus_onset', columns='unit_id', values='spike_counts'))
         # Select only units for which the maximum value is greater than 2
-        stop_time = (stop_time * 1000) + 50
+        stop_time = int((stop_time * 1000) + 50)
         data = data.loc[:stop_time, data.max() > 2]
 
-        # Iterate over sets of 10 columns (units) and save to output folder
+        # Iterate over sets of {per_plot} columns (units) and save to output folder
         c = data.shape[1]
         per_plot = 10
         for i in range(0, c, per_plot):
@@ -164,26 +211,23 @@ class EcephysAnalyzer:
             # Plot each column of a_subset on a separate subplot
             for j, col in enumerate(a_subset.columns):
                 axs[j].plot(a_subset.index, a_subset[col])
+                axs[j].set_ylabel(self.unit_ids_and_areas[self.unit_ids_and_areas["unit_id"]==col]["unit_id_int"].values[0])
+                axs[j].yaxis.set_label_position("right")
             # Add labels to the plot
             fig.suptitle(f'Columns {i + 1}-{i + per_plot} of {c}')
             plt.xlabel('Time relative to stimulus onset')
-            plt.ylabel('PSTH')
             # Save the plot to output_dir
             fig.savefig(os.path.join(self.output_dir, f'columns_{i + 1}-{i + per_plot}.png'))
 
-    def sample_data(self):
-        data = self.drifting_gratings_spike_counts
-        unit_ids_for_region = self.unit_ids_and_areas[
-            self.unit_ids_and_areas['ecephys_structure_acronym'] == 'VISp']['unit_id'].values
-        data = (data
-                .sel(unit_id=unit_ids_for_region)
-                .sel(stimulus_presentation_id=49417)
-                .to_dataframe(name='spike_counts')
-                .pivot_table(index='time_relative_to_stimulus_onset',
-                             columns='unit_id', values='spike_counts'))
-        return data.iloc[:550, :].to_numpy().T
+    def sample_data(self, unit_ids=None, presentation_ids=None, regions=None, conditions=None):
 
-    def run(self):
-        self.collate_sessions()
-        self.get_best_session()
-        return self.sample_data()
+        times_data = self.filter_spike_times(unit_ids, presentation_ids, regions, conditions)
+        times_data = times_data[times_data['time_since_stimulus_presentation_onset']<=0.5]
+        times_data_units = times_data['unit_id'].unique()
+        count_data = self.filter_spike_counts(unit_ids, presentation_ids, regions, conditions)
+        count_data = count_data.to_dataframe(name='spike_counts').pivot_table(index='time_relative_to_stimulus_onset',
+                                                                              columns='unit_id', values='spike_counts')
+        count_data = count_data[times_data_units].iloc[:550, :]
+        time = count_data.index.values
+        return count_data.to_numpy().T, times_data, time
+

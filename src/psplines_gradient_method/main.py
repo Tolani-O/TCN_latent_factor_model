@@ -2,12 +2,13 @@ import numpy as np
 import src.simulate_data as sd
 from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj
 from src.psplines_gradient_method.general_functions import compute_lambda, compute_latent_factors, \
-    compute_numerical_grad, create_first_diff_matrix, create_second_diff_matrix
+    compute_numerical_grad, create_first_diff_matrix, create_second_diff_matrix, plot_intensity_and_latents, \
+    plot_binned, plot_spikes
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
 
 K, degree, T = 100, 3, 200
-intensity_type = ('constant', '1peak', '2peaks')
+intensity_type = ('1peak', '2peaks')
 L = len(intensity_type)
 # base firing rate
 time = np.arange(0, T, 1)/100
@@ -18,7 +19,9 @@ np.random.seed(0)
 intensity, binned, spikes = sd.generate_spike_trains(latent_factors, (0.1, 0.13, 0.13), (-3, -3, -3), (1/3, 1/3, 1/3), K)
 K = binned.shape[0]
 
-# sd.plot_intensity_and_spikes(time, latent_factors, intensity, binned, spikes)
+# plot_intensity_and_latents(time, latent_factors, intensity)
+# plot_binned(binned)
+# plot_spikes(spikes)
 
 # Manual Implementation
 Y = binned  # K x T
@@ -37,21 +40,21 @@ beta = np.random.rand(L, P)
 np.random.seed(0)
 d = np.random.rand(K)
 
-# # Training hyperparameters
-# num_epochs = 40000
-# beta_tausq = 100*np.ones(L) # 10*np.square(np.random.rand(L))
-# G_eta = 2
-# smooth = 1000
-# G_smooth = 200
-# Omega = create_first_diff_matrix(P)
-
 # Training hyperparameters
-num_epochs = 4000
-beta_tausq = 80*np.ones(L) # 10*np.square(np.random.rand(L))
-G_eta = 10
-smooth = 2000
-G_smooth = 400
-Omega = create_second_diff_matrix(P)
+num_epochs = 40000
+beta_tausq = 100*np.ones(L) # 10*np.square(np.random.rand(L))
+G_eta = 2
+smooth = 1000
+G_smooth = 200
+Omega = create_first_diff_matrix(P)
+
+# # Training hyperparameters
+# num_epochs = 4000
+# beta_tausq = 80*np.ones(L) # 10*np.square(np.random.rand(L))
+# G_eta = 10
+# smooth = 2000
+# G_smooth = 400
+# Omega = create_second_diff_matrix(P)
 
 G_grads = []
 beta_grads = []
@@ -147,7 +150,7 @@ for i in range(L):
     plt.plot(np.concatenate([[time[0]-dt], time]), beta[i, :])
     plt.plot(time, latent_factors_manual[i, :])
     plt.title(f'beta[{i}, :]')
-    plt.show()
+plt.show()
 
 # for i in range(L):
 #     plt.plot(time, latent_factors_manual[i, :])

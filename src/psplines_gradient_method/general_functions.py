@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def create_precision_matrix(P):
@@ -88,3 +89,37 @@ def compute_numerical_grad(Y, B, d, G, beta, beta_tausq, dt, obj_func, eps=1e-6)
         beta_tausq_grad[i] = (lk2 - lk1) / eps
 
     return -d_grad, -G_grad, -beta_grad, -beta_tausq_grad
+
+
+def plot_intensity_and_latents(time, latent_factors, intensity):
+
+    # plot latent factors
+    for i in range(latent_factors.shape[0]):
+        plt.plot(time, latent_factors[i, :] + i)
+    plt.show()
+
+    # plot neuron intensities
+    for i in range(intensity.shape[0]):
+        plt.plot(time, intensity[i, :] + i*0.1)
+    plt.show()
+
+
+def plot_spikes(spikes):
+    # Group entries by unique values of s[0]
+    unique_s_0 = np.unique(spikes[0])
+    grouped_s = []
+    for i in unique_s_0:
+        indices = np.where(spikes[0] == i)[0]
+        values = spikes[1][indices]
+        grouped_s.append((i, values))
+    for group in grouped_s:
+        plt.scatter(group[1], np.zeros_like(group[1]) + group[0], s=1, c='black')
+    plt.show()
+
+
+def plot_binned(binned):
+    # plot binned spikes
+    _, ax = plt.subplots()
+    ax.imshow(binned)
+    ax.invert_yaxis()
+    plt.show()

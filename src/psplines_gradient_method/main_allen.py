@@ -2,20 +2,34 @@ import numpy as np
 from src.allen_data import EcephysAnalyzer
 from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj
 from src.psplines_gradient_method.general_functions import compute_lambda, compute_latent_factors, \
-    compute_numerical_grad, create_first_diff_matrix, create_second_diff_matrix
+    create_first_diff_matrix, create_second_diff_matrix, plot_binned, plot_spikes
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
 
 
 degree, L = 3, 3
+responsive_units = [85, 143, 76, 107, 116, 95, 46, 222, 73, 118, 15, 43, 34, 13, 17, 18, 79, 172, 221,
+                    23, 29, 31, 54, 211, 47, 148, 90, 229, 28, 50, 8, 99, 48, 101, 39, 91, 127, 137,
+                    11, 66, 117, 55, 20, 87, 27, 22, 170, 21, 2, 30, 19, 12, 191]
+non_responsive_units = [238, 242, 64, 185, 138, 98, 10, 182, 52, 105, 202, 175, 132, 204, 210, 219, 240,
+                        239, 205, 102, 75, 140, 203, 111, 217, 233, 196, 230, 187, 235, 192, 206, 60, 178,
+                        228, 128, 173, 84, 156, 1, 180, 168, 214, 174, 141, 186, 215, 164, 106, 234, 130,
+                        197, 241, 243, 149, 200, 220, 181, 227, 126]
+presentation_ids = 49417
 # Manual Implementation
-analyzer = EcephysAnalyzer()
-binned = analyzer.run()
-K = binned.shape[1]
-time = binned.index.values
+self = EcephysAnalyzer().initialize()
+binned, spikes, time = self.sample_data(unit_ids=responsive_units + non_responsive_units, presentation_ids=presentation_ids)
+K = binned.shape[0]
 dt = round(time[1] - time[0], 3)
+# make plots
+spikes['unit_id'] = spikes['unit_id'].astype(str)
+spikes.plot(x='time_since_stimulus_presentation_onset', y='unit_id', kind='scatter', s=1, yticks=[])
+plt.show()
+binned_spikes = np.where(binned >= 1)
+plot_spikes(binned_spikes)
 
-Y = binned.to_numpy().T
+
+Y = binned
 B = generate_bsplines(time, degree)  # T x T. The coefficient (beta) will be regularized
 P = B.shape[0]
 # start = 190
@@ -58,22 +72,6 @@ losses = []
 eps = 1e-4
 for epoch in range(num_epochs):
     # Forward pass and gradient computation
-
-    # tausq = 2*tausq
-    # loss, dd, dG, dbeta, dtausq = log_prob(Y, B, d, G, beta, tausq, dt)
-    #
-    # # # verify gradient using finite difference
-    # # dd_num, dG_num, dbeta_num, dtausq_num = compute_numerical_grad(Y, B, d, G, beta, tausq, dt, log_prob, eps)
-    # # dd_error = np.mean(np.square(dd - dd_num))
-    # # dG_error = np.mean(np.square(dG - dG_num))
-    # # dbeta_error = np.mean(np.square(dbeta - dbeta_num))
-    # # dtausq_error = np.mean(np.square(dtausq - dtausq_num))
-    # # d_grads.append(dd_error)
-    # # G_grads.append(dG_error)
-    # # beta_grads.append(dbeta_error)
-    # # tausq_grads.append(dtausq_error)
-    # # print(f"Epoch {epoch}, dd_error {dd_error}, dG_error {dG_error}, dbeta_error {dbeta_error}, dtausq_error {dtausq_error}")
-
     result = log_obj(Y, B, d, G, beta, Omega, beta_tausq, G_eta, G_smooth, smooth, dt)
     loss = result["loss"]
     dd = result["dLogL_dd"]
@@ -95,24 +93,10 @@ for epoch in range(num_epochs):
     prev_d = np.copy(d)
     prev_dd = np.copy(dd)
 
-    # # verify gradient using finite difference
-    # dd_num, dG_num, dbeta_num, _ = compute_numerical_grad(Y, B, d, G, beta, tausq, dt, log_obj, eps)
-    # dd_error = np.mean(np.square(dd - dd_num))
-    # dG_error = np.mean(np.square(dG - dG_num))
-    # dbeta_error = np.mean(np.square(dbeta - dbeta_num))
-    # d_grads.append(dd_error)
-    # G_grads.append(dG_error)
-    # beta_grads.append(dbeta_error)
-    # print(f"Epoch {epoch}, dd_error {dd_error}, dG_error {dG_error}, dbeta_error {dbeta_error}")
-
     # Update parameters using gradients
     d = result["d_plus"]
     G = result["G_plus"]
     beta = result["beta_plus"]
-    # d = np.copy(dd)
-    # G = np.copy(G_plus)
-    # beta = np.copy(beta_plus)
-    # tausq -= learning_rate * dtausq
     # Store losses and gradients
     losses.append(loss)
     if epoch % 1000 == 0:
@@ -137,7 +121,7 @@ plt.show()
 
 latent_factors_manual = compute_latent_factors(B, beta)
 for i in range(L):
-    plt.plot(np.concatenate([[time[0]-dt], time]), beta[i, :])
+    #plt.plot(np.concatenate([[time[0]-dt], time]), beta[i, :])
     plt.plot(time, latent_factors_manual[i, :])
     plt.title(f'beta[{i}, :]')
     plt.show()
