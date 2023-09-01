@@ -8,8 +8,8 @@ from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
 
 K, degree, T = 100, 3, 200
-intensity_type = ('1peak', '2peaks')
-L = len(intensity_type)
+intensity_type = ('constant', '1peak', '2peaks')
+L = len(intensity_type) - 1
 # base firing rate
 time = np.arange(0, T, 1)/100
 dt = time[1] - time[0]
@@ -152,6 +152,4 @@ for i in range(L):
     plt.title(f'beta[{i}, :]')
 plt.show()
 
-# for i in range(L):
-#     plt.plot(time, latent_factors_manual[i, :])
-# plt.show()
+G_and_d = np.concatenate([G, d[:, np.newaxis]], axis=1)

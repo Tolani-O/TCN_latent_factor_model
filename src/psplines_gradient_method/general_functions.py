@@ -36,7 +36,7 @@ def create_second_diff_matrix(P):
 
 def compute_lambda(B, d, G, beta):
     J = np.ones((len(d), B.shape[1]))
-    diagdJ_plus_GBetaB = d[:, np.newaxis] * J + np.dot(np.dot(G, beta), B)
+    diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
     lambda_ = np.exp(diagdJ_plus_GBetaB)
     return lambda_
 
