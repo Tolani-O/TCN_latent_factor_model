@@ -2,9 +2,10 @@ import numpy as np
 import src.simulate_data as sd
 from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj, log_obj_with_backtracking_line_search
 from src.psplines_gradient_method.general_functions import compute_lambda, compute_numerical_grad, \
-    create_first_diff_matrix, create_second_diff_matrix, plot_intensity_and_latents, plot_binned, plot_spikes
+    create_first_diff_matrix, create_second_diff_matrix, plot_binned, plot_spikes, plot_intensity_and_latents
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
+
 
 K, degree, T = 100, 3, 200
 intensity_type = ('constant', '1peak', '2peaks')
@@ -41,12 +42,12 @@ np.random.seed(0)
 d = np.random.rand(K)
 
 # Training parameters
-num_epochs = 10000
+num_epochs = 2500
 Omega = create_first_diff_matrix(P)
 
 # Training hyperparameters
 tau_beta = 80
-tau_G = 10
+tau_G = 2
 
 # # Training hyperparameters
 # num_epochs = 4000
@@ -56,20 +57,19 @@ tau_G = 10
 # G_smooth = 400
 # Omega = create_second_diff_matrix(P)
 
-G_grads = []
-beta_grads = []
-d_grads = []
+G_grads_norm = []
+beta_grads_norm = []
+d_grads_norm = []
 G_smooths = []
 beta_smooths = []
 d_smooths = []
 losses = []
-eps = 1e-4
 
-d_next_loss = []
+d_loss_increase = []
 d_next_likelihood = []
-G_next_loss = []
+G_loss_increase = []
 G_next_likelihood = []
-beta_next_loss = []
+beta_loss_increase = []
 beta_next_likelihood = []
 smooth_d = []
 smooth_G = []
@@ -90,11 +90,14 @@ for epoch in range(num_epochs):
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
 
-    d_next_loss.append(result["d_loss_next"])
+    G_grads_norm.append(np.linalg.norm(dG, ord=2))
+    beta_grads_norm.append(np.linalg.norm(dbeta, ord=2))
+    d_grads_norm.append(np.linalg.norm(dd, ord=2))
+    d_loss_increase.append(result["d_loss_increase"])
     d_next_likelihood.append(result["d_likelihood_next"])
-    G_next_loss.append(result["G_loss_next"])
+    G_loss_increase.append(result["G_loss_increase"])
     G_next_likelihood.append(result["G_likelihood_next"])
-    beta_next_loss.append(result["beta_loss_next"])
+    beta_loss_increase.append(result["beta_loss_increase"])
     beta_next_likelihood.append(result["beta_likelihood_next"])
     smooth_d.append(result["smooth_d"])
     smooth_G.append(result["smooth_G"])
@@ -147,13 +150,13 @@ plt.show()
 plt.plot(np.arange(1, num_epochs), d_smooths)
 plt.title('d Smooths Numeric')
 plt.show()
-plt.plot(np.arange(0, num_epochs), 1/smooth_G)
+plt.plot(np.arange(0, num_epochs), 1 / smooth_G)
 plt.title('G Smooths Line Search')
 plt.show()
-plt.plot(np.arange(0, num_epochs), 1/smooth_beta)
+plt.plot(np.arange(0, num_epochs), 1 / smooth_beta)
 plt.title('Beta Smooths  Line Search')
 plt.show()
-plt.plot(np.arange(0, num_epochs), 1/smooth_d)
+plt.plot(np.arange(0, num_epochs), 1 / smooth_d)
 plt.title('d Smooths  Line Search')
 plt.show()
 plt.plot(np.arange(0, num_epochs), iters_G)
@@ -165,6 +168,11 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), iters_d)
 plt.title('d Iters')
 plt.show()
+
+combined = np.concatenate([losses[:, np.newaxis], smooth_G[:, np.newaxis], smooth_beta[:, np.newaxis], smooth_d[:, np.newaxis],
+                            iters_G[:, np.newaxis], iters_beta[:, np.newaxis], iters_d[:, np.newaxis]], axis=1)
+d_loss_increase = np.array(d_loss_increase)[:, np.newaxis]
+G_loss_increase = np.array(G_loss_increase)[:, np.newaxis]
 
 lambda_manual = compute_lambda(B, d, G, beta)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)

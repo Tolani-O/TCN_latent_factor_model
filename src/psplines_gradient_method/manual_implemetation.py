@@ -58,10 +58,10 @@ def log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth
     y_minus_lambdadt_times_B = y_minus_lambdadt @ B.T
 
     dLogL_dd = np.sum(y_minus_lambdadt, axis=1) - 2 * tau_d * d
-    d_plus = d + (1/smooth_d) * dLogL_dd
+    d_plus = d + (1 / smooth_d) * dLogL_dd
     dlogL_dG = y_minus_lambdadt_times_B @ beta.T
-    G_minus = G + (1/smooth_G) * dlogL_dG
-    G_plus = np.maximum(np.abs(G_minus) - tau_G/smooth_G, 0) * np.sign(G_minus)
+    G_minus = G + (1 / smooth_G) * dlogL_dG
+    G_plus = np.maximum(np.abs(G_minus) - tau_G / smooth_G, 0) * np.sign(G_minus)
     dlogL_dbeta = G.T @ y_minus_lambdadt_times_B - 2 * tau_beta * beta @ Omega
     beta_minus = beta + smooth_beta * dlogL_dbeta
     beta_plus = np.maximum(beta_minus, 0)
@@ -84,7 +84,7 @@ def log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth
 
 
 def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt=1,
-                                          alpha=0.3, beta_factor=0.1):
+                                          alpha=0.3, beta_factor=1e-2, G_factor=1e-2, d_factor=1e-2, max_iters=4):
     smooth_beta, smooth_G, smooth_d = 1, 1, 1
     J = np.ones_like(Y)
     diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
@@ -106,7 +106,7 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
 
     # smooth_beta
     ct = 0
-    while True:
+    while ct < max_iters:  # otherwise there isn't a good decrement direction/it runs into overflow limitations
         beta_minus = beta + smooth_beta * dlogL_dbeta
         beta_plus = np.maximum(beta_minus, 0)
 
@@ -120,7 +120,7 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
 
         # Armijo condition, using Frobenius norm for matrices, but for maximization
         if (loss_next >= loss + alpha * smooth_beta * np.sum(dlogL_dbeta * gen_grad_curr) +
-                alpha * smooth_beta * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro')**2):
+                alpha * smooth_beta * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro') ** 2):
             break
         smooth_beta *= beta_factor
         ct += 1
@@ -128,10 +128,14 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
     loss_beta = loss_next
     log_likelihood_beta = log_likelihood
     ct_beta = ct
+    if ct == max_iters:
+        beta_plus = beta
+        smooth_beta = 0
+        ct_beta = np.inf
 
     # smooth_G
     ct = 0
-    while True:
+    while ct < max_iters:
         G_minus = G + smooth_G * dlogL_dG
         G_plus = np.maximum(np.abs(G_minus) - tau_G * smooth_G, 0) * np.sign(G_minus)
 
@@ -145,18 +149,22 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
 
         # Armijo condition, using Frobenius norm for matrices, but for maximization
         if (loss_next >= loss_beta + alpha * smooth_G * np.sum(dlogL_dG * gen_grad_curr) +
-                alpha * smooth_G * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro')**2):
+                alpha * smooth_G * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro') ** 2):
             break
-        smooth_G *= beta_factor
+        smooth_G *= G_factor
         ct += 1
 
     loss_G = loss_next
     log_likelihood_G = log_likelihood
     ct_G = ct
+    if ct == max_iters:
+        G_plus = G
+        smooth_G = 0
+        ct_G = np.inf
 
     # smooth_d
     ct = 0
-    while True:
+    while ct < max_iters:
         d_plus = d + smooth_d * dLogL_dd
 
         diagdJ_plus_GBetaB = d_plus[:, np.newaxis] * J + G_plus @ beta_plus @ B
@@ -168,29 +176,33 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
         # Armijo condition, using Frobenius norm for matrices, but for maximization
         if loss_next >= loss_G + alpha * smooth_d * np.sum(dlogL_dG * dlogL_dG):
             break
-        smooth_d *= beta_factor
+        smooth_d *= d_factor
         ct += 1
 
     loss_d = loss_next
     log_likelihood_d = log_likelihood
     ct_d = ct
+    if ct == max_iters:
+        d_plus = d
+        smooth_d = 0
+        ct_d = np.inf
 
     result = {
         "dLogL_dd": dLogL_dd,
         "d_plus": d_plus,
-        "d_loss_next": loss_d,
+        "d_loss_increase": loss_d - loss_G,
         "d_likelihood_next": log_likelihood_d,
         "smooth_d": smooth_d,
         "iters_d": ct_d,
         "dlogL_dG": dlogL_dG,
         "G_plus": G_plus,
-        "G_loss_next": loss_G,
+        "G_loss_increase": loss_G - loss_beta,
         "G_likelihood_next": log_likelihood_G,
         "smooth_G": smooth_G,
         "iters_G": ct_G,
         "dlogL_dbeta": dlogL_dbeta,
         "beta_plus": beta_plus,
-        "beta_loss_next": loss_beta,
+        "beta_loss_increase": loss_beta - loss,
         "beta_likelihood_next": log_likelihood_beta,
         "smooth_beta": smooth_beta,
         "iters_beta": ct_beta,
