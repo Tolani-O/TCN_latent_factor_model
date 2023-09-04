@@ -1,6 +1,6 @@
 import numpy as np
 import src.simulate_data as sd
-from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj
+from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj, log_obj_with_backtracking_line_search
 from src.psplines_gradient_method.general_functions import compute_lambda, compute_numerical_grad, \
     create_first_diff_matrix, create_second_diff_matrix, plot_intensity_and_latents, plot_binned, plot_spikes
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
@@ -49,12 +49,6 @@ tau_beta = 30
 tau_G = 2
 tau_d = 2
 
-# learning rates
-smooth_beta = 800
-smooth_G = 800
-smooth_d = 400
-
-
 # # Training hyperparameters
 # num_epochs = 4000
 # beta_tausq = 80*np.ones(L) # 10*np.square(np.random.rand(L))
@@ -71,10 +65,21 @@ beta_smooths = []
 d_smooths = []
 losses = []
 eps = 1e-4
+
+d_next_loss = []
+d_next_likelihood = []
+G_next_loss = []
+G_next_likelihood = []
+beta_next_loss = []
+beta_next_likelihood = []
+smooth_d = []
+smooth_G = []
+smooth_beta = []
 for epoch in range(num_epochs):
     # Forward pass and gradient computation
 
-    result = log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+    # result = log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+    result = log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, dt)
     loss = result["loss"]
     dd = result["dLogL_dd"]
     dG = result["dlogL_dG"]
@@ -83,6 +88,16 @@ for epoch in range(num_epochs):
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
     d_penalty = result["d_penalty"]
+
+    d_next_loss.append(result["d_loss_next"])
+    d_next_likelihood.append(result["d_likelihood_next"])
+    G_next_loss.append(result["G_loss_next"])
+    G_next_likelihood.append(result["G_likelihood_next"])
+    beta_next_loss.append(result["beta_loss_next"])
+    beta_next_likelihood.append(result["beta_likelihood_next"])
+    smooth_d.append(result["smooth_d"])
+    smooth_G.append(result["smooth_G"])
+    smooth_beta.append(result["smooth_beta"])
 
     if epoch > 0:
         G_smooths.append(np.linalg.norm(dG - prev_dG, ord=2) / np.linalg.norm(G - prev_G, ord=2))
@@ -102,7 +117,7 @@ for epoch in range(num_epochs):
     beta = result["beta_plus"]
     # Store losses and gradients
     losses.append(loss)
-    if epoch % 1000 == 0:
+    # if epoch % 1000 == 0:
         print(f"Epoch {epoch}, Loss {loss}")
 
 plt.plot(np.arange(0, num_epochs), losses[0:])
