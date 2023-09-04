@@ -41,33 +41,28 @@ def compute_lambda(B, d, G, beta):
     return lambda_
 
 
-def compute_latent_factors(B, beta):
-    N = beta @ B
-    return N
-
-
-def compute_numerical_grad(Y, B, d, G, beta, beta_tausq, dt, obj_func, eps=1e-6):
+def compute_numerical_grad(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt, obj_func, eps=1e-6):
     """Compute numerical gradient of func w.r.t G"""
     G_grad = np.zeros_like(G)
     beta_grad = np.zeros_like(beta)
     d_grad = np.zeros_like(d)
-    beta_tausq_grad = np.zeros_like(beta_tausq)
-    result = obj_func(Y, B, d, G, beta, beta_tausq, dt)
+    result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
     lk1 = result["loss"]
+    lk1_G = result["log_likelihood"] + result["beta_penalty"] + result["d_penalty"]
     for i in range(G.shape[0]):
         for j in range(G.shape[1]):
             orig = G[i, j]
             G[i, j] = orig + eps
-            result = obj_func(Y, B, d, G, beta, beta_tausq, dt)
-            lk2 = result["loss"]
+            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+            lk2 = result["log_likelihood"] + result["beta_penalty"] + result["d_penalty"]
             G[i, j] = orig
-            G_grad[i, j] = (lk2 - lk1) / eps
+            G_grad[i, j] = (lk2 - lk1_G) / eps
 
     for i in range(beta.shape[0]):
         for j in range(beta.shape[1]):
             orig = beta[i, j]
             beta[i, j] = orig + eps
-            result = obj_func(Y, B, d, G, beta, beta_tausq, dt)
+            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
             lk2 = result["loss"]
             beta[i, j] = orig
             beta_grad[i, j] = (lk2 - lk1) / eps
@@ -75,20 +70,12 @@ def compute_numerical_grad(Y, B, d, G, beta, beta_tausq, dt, obj_func, eps=1e-6)
     for i in range(d.shape[0]):
         orig = d[i]
         d[i] = orig + eps
-        result = obj_func(Y, B, d, G, beta, beta_tausq, dt)
+        result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
         lk2 = result["loss"]
         d[i] = orig
         d_grad[i] = (lk2 - lk1) / eps
 
-    for i in range(beta_tausq.shape[0]):
-        orig = beta_tausq[i]
-        beta_tausq[i] = orig + eps
-        result = obj_func(Y, B, d, G, beta, beta_tausq, dt)
-        lk2 = result["loss"]
-        beta_tausq[i] = orig
-        beta_tausq_grad[i] = (lk2 - lk1) / eps
-
-    return -d_grad, -G_grad, -beta_grad, -beta_tausq_grad
+    return d_grad, G_grad, beta_grad
 
 
 def plot_intensity_and_latents(time, latent_factors, intensity):
