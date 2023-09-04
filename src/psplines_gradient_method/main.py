@@ -41,13 +41,12 @@ np.random.seed(0)
 d = np.random.rand(K)
 
 # Training parameters
-num_epochs = 40000
+num_epochs = 10000
 Omega = create_first_diff_matrix(P)
 
 # Training hyperparameters
-tau_beta = 30
-tau_G = 2
-tau_d = 2
+tau_beta = 80
+tau_G = 10
 
 # # Training hyperparameters
 # num_epochs = 4000
@@ -75,11 +74,14 @@ beta_next_likelihood = []
 smooth_d = []
 smooth_G = []
 smooth_beta = []
+iters_d = []
+iters_G = []
+iters_beta = []
 for epoch in range(num_epochs):
     # Forward pass and gradient computation
 
     # result = log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-    result = log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, dt)
+    result = log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
     loss = result["loss"]
     dd = result["dLogL_dd"]
     dG = result["dlogL_dG"]
@@ -87,7 +89,6 @@ for epoch in range(num_epochs):
     log_likelihood = result["log_likelihood"]
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
-    d_penalty = result["d_penalty"]
 
     d_next_loss.append(result["d_loss_next"])
     d_next_likelihood.append(result["d_likelihood_next"])
@@ -98,6 +99,9 @@ for epoch in range(num_epochs):
     smooth_d.append(result["smooth_d"])
     smooth_G.append(result["smooth_G"])
     smooth_beta.append(result["smooth_beta"])
+    iters_d.append(result["iters_d"])
+    iters_G.append(result["iters_G"])
+    iters_beta.append(result["iters_beta"])
 
     if epoch > 0:
         G_smooths.append(np.linalg.norm(dG - prev_dG, ord=2) / np.linalg.norm(G - prev_G, ord=2))
@@ -117,16 +121,49 @@ for epoch in range(num_epochs):
     beta = result["beta_plus"]
     # Store losses and gradients
     losses.append(loss)
-    # if epoch % 1000 == 0:
+    if epoch % 100 == 0:
         print(f"Epoch {epoch}, Loss {loss}")
 
+num_epochs = len(losses)
+losses = np.array(losses)
+G_smooths = np.array(G_smooths)
+beta_smooths = np.array(beta_smooths)
+d_smooths = np.array(d_smooths)
+smooth_G = np.array(smooth_G)
+smooth_beta = np.array(smooth_beta)
+smooth_d = np.array(smooth_d)
+iters_d = np.array(iters_d)
+iters_G = np.array(iters_G)
+iters_beta = np.array(iters_beta)
 plt.plot(np.arange(0, num_epochs), losses[0:])
+plt.title('Losses')
 plt.show()
 plt.plot(np.arange(1, num_epochs), G_smooths)
+plt.title('G Smooths Numeric')
 plt.show()
 plt.plot(np.arange(1, num_epochs), beta_smooths)
+plt.title('Beta Smooths Numeric')
 plt.show()
 plt.plot(np.arange(1, num_epochs), d_smooths)
+plt.title('d Smooths Numeric')
+plt.show()
+plt.plot(np.arange(0, num_epochs), 1/smooth_G)
+plt.title('G Smooths Line Search')
+plt.show()
+plt.plot(np.arange(0, num_epochs), 1/smooth_beta)
+plt.title('Beta Smooths  Line Search')
+plt.show()
+plt.plot(np.arange(0, num_epochs), 1/smooth_d)
+plt.title('d Smooths  Line Search')
+plt.show()
+plt.plot(np.arange(0, num_epochs), iters_G)
+plt.title('G Iters')
+plt.show()
+plt.plot(np.arange(0, num_epochs), iters_beta)
+plt.title('Beta Iters')
+plt.show()
+plt.plot(np.arange(0, num_epochs), iters_d)
+plt.title('d Iters')
 plt.show()
 
 lambda_manual = compute_lambda(B, d, G, beta)

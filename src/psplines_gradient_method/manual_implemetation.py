@@ -83,8 +83,8 @@ def log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth
     return result
 
 
-def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, dt=1,
-                                          alpha=0.3, beta_factor=0.8):
+def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt=1,
+                                          alpha=0.3, beta_factor=0.1):
     smooth_beta, smooth_G, smooth_d = 1, 1, 1
     J = np.ones_like(Y)
     diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
@@ -94,18 +94,18 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
     log_likelihood = np.sum(diagdJ_plus_GBetaB * Y - lambda_del_t)
     beta_penalty = - tau_beta * np.sum(np.diag(beta @ Omega @ beta.T))
     G_penalty = - tau_G * np.linalg.norm(G, ord=1)
-    d_penalty = - tau_d * d.T @ d
-    loss = log_likelihood + beta_penalty + G_penalty + d_penalty
+    loss = log_likelihood + beta_penalty + G_penalty
 
     # Manual gradients
     y_minus_lambdadt = Y - lambda_del_t
     y_minus_lambdadt_times_B = y_minus_lambdadt @ B.T
 
-    dLogL_dd = np.sum(y_minus_lambdadt, axis=1) - 2 * tau_d * d
+    dLogL_dd = np.sum(y_minus_lambdadt, axis=1)
     dlogL_dbeta = G.T @ y_minus_lambdadt_times_B - 2 * tau_beta * beta @ Omega
     dlogL_dG = y_minus_lambdadt_times_B @ beta.T
 
     # smooth_beta
+    ct = 0
     while True:
         beta_minus = beta + smooth_beta * dlogL_dbeta
         beta_plus = np.maximum(beta_minus, 0)
@@ -116,18 +116,21 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
 
         log_likelihood = np.sum(diagdJ_plus_GBetaB * Y - lambda_del_t)
         beta_penalty = - tau_beta * np.sum(np.diag(beta_plus @ Omega @ beta_plus.T))
-        loss_next = log_likelihood + beta_penalty + G_penalty + d_penalty
+        loss_next = log_likelihood + beta_penalty + G_penalty
 
         # Armijo condition, using Frobenius norm for matrices, but for maximization
         if (loss_next >= loss + alpha * smooth_beta * np.sum(dlogL_dbeta * gen_grad_curr) +
                 alpha * smooth_beta * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro')**2):
             break
         smooth_beta *= beta_factor
+        ct += 1
 
     loss_beta = loss_next
     log_likelihood_beta = log_likelihood
+    ct_beta = ct
 
     # smooth_G
+    ct = 0
     while True:
         G_minus = G + smooth_G * dlogL_dG
         G_plus = np.maximum(np.abs(G_minus) - tau_G * smooth_G, 0) * np.sign(G_minus)
@@ -138,18 +141,21 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
 
         log_likelihood = np.sum(diagdJ_plus_GBetaB * Y - lambda_del_t)
         G_penalty = - tau_G * np.linalg.norm(G_plus, ord=1)
-        loss_next = log_likelihood + beta_penalty + G_penalty + d_penalty
+        loss_next = log_likelihood + beta_penalty + G_penalty
 
         # Armijo condition, using Frobenius norm for matrices, but for maximization
         if (loss_next >= loss_beta + alpha * smooth_G * np.sum(dlogL_dG * gen_grad_curr) +
                 alpha * smooth_G * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro')**2):
             break
         smooth_G *= beta_factor
+        ct += 1
 
     loss_G = loss_next
     log_likelihood_G = log_likelihood
+    ct_G = ct
 
     # smooth_d
+    ct = 0
     while True:
         d_plus = d + smooth_d * dLogL_dd
 
@@ -157,16 +163,17 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
 
         log_likelihood = np.sum(diagdJ_plus_GBetaB * Y - lambda_del_t)
-        d_penalty = - tau_d * d_plus.T @ d_plus
-        loss_next = log_likelihood + beta_penalty + G_penalty + d_penalty
+        loss_next = log_likelihood + beta_penalty + G_penalty
 
         # Armijo condition, using Frobenius norm for matrices, but for maximization
         if loss_next >= loss_G + alpha * smooth_d * np.sum(dlogL_dG * dlogL_dG):
             break
         smooth_d *= beta_factor
+        ct += 1
 
     loss_d = loss_next
     log_likelihood_d = log_likelihood
+    ct_d = ct
 
     result = {
         "dLogL_dd": dLogL_dd,
@@ -174,19 +181,21 @@ def log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau
         "d_loss_next": loss_d,
         "d_likelihood_next": log_likelihood_d,
         "smooth_d": smooth_d,
+        "iters_d": ct_d,
         "dlogL_dG": dlogL_dG,
         "G_plus": G_plus,
         "G_loss_next": loss_G,
         "G_likelihood_next": log_likelihood_G,
         "smooth_G": smooth_G,
+        "iters_G": ct_G,
         "dlogL_dbeta": dlogL_dbeta,
         "beta_plus": beta_plus,
         "beta_loss_next": loss_beta,
         "beta_likelihood_next": log_likelihood_beta,
         "smooth_beta": smooth_beta,
+        "iters_beta": ct_beta,
         "loss": loss,
         "log_likelihood": log_likelihood,
-        "d_penalty": d_penalty,
         "beta_penalty": beta_penalty,
         "G_penalty": G_penalty
     }
