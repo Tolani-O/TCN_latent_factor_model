@@ -34,6 +34,14 @@ def create_second_diff_matrix(P):
     return D
 
 
+def create_masking_matrix(N, M):
+    mat = np.zeros((N, N * M), dtype=int)  # Start with a kxkm matrix of zeros
+    rows = np.repeat(np.arange(N), M)
+    cols = np.arange(N * M).reshape(N, M).ravel()
+    mat[rows, cols] = 1
+    return mat
+
+
 def compute_lambda(B, d, G, beta):
     J = np.ones((len(d), B.shape[1]))
     diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
