@@ -1,6 +1,7 @@
 import numpy as np
 import src.simulate_data as sd
-from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj, log_obj_with_backtracking_line_search
+from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj, log_obj_with_backtracking_line_search, \
+    log_obj_with_backtracking_line_search_sequential
 from src.psplines_gradient_method.general_functions import compute_lambda, compute_numerical_grad, \
     create_first_diff_matrix, create_second_diff_matrix, plot_binned, plot_spikes, plot_intensity_and_latents
 from src.psplines_gradient_method.generate_bsplines import generate_bsplines
@@ -81,7 +82,7 @@ for epoch in range(num_epochs):
     # Forward pass and gradient computation
 
     # result = log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-    result = log_obj_with_backtracking_line_search(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
+    result = log_obj_with_backtracking_line_search_sequential(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
     loss = result["loss"]
     dd = result["dLogL_dd"]
     dG = result["dlogL_dG"]
