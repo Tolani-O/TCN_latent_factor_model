@@ -74,7 +74,7 @@ Omega_psi = create_first_diff_matrix(Q)
 
 
 # Training hyperparameters
-tau_psi = 30
+tau_psi = 80
 tau_beta = 80
 tau_G = 2
 
@@ -211,18 +211,20 @@ combined = np.concatenate([losses[:, np.newaxis], smooth_G[:, np.newaxis], smoot
 d_loss_increase = np.array(d_loss_increase)[:, np.newaxis]
 G_loss_increase = np.array(G_loss_increase)[:, np.newaxis]
 
-lambda_manual = compute_lambda(B, d, G, beta)
+time_matrix = psi @ V
+B_psi = generate_bspline_matrix(B_func_n, time_matrix)
+lambda_manual = compute_lambda(B_psi, d, G_star, beta)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
 plt.plot(time, avg_lambda_manual)
 plt.show()
 np.mean(np.square(intensity - lambda_manual))
 for i in range(K):
-    plt.plot(time, lambda_manual[i, :] + i * 10)
+    plt.plot(time, lambda_manual[i, :] + i * 0.1)
 plt.show()
 
-latent_factors_manual = beta @ B
+latent_factors_manual = beta @ V
 for i in range(L):
-    plt.plot(np.concatenate([[time[0] - dt], time]), beta[i, :])
+    # plt.plot(np.concatenate([[time[0] - dt], time]), beta[i, :])
     plt.plot(time, latent_factors_manual[i, :])
     plt.title(f'Factor [{i}, :]')
 plt.show()

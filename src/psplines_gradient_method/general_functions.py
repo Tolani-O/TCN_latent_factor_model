@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from src.psplines_gradient_method.generate_bsplines import generate_bspline_matrix
+
 
 def create_precision_matrix(P):
     Omega = np.zeros((P, P))
@@ -42,9 +44,10 @@ def create_masking_matrix(N, M):
     return mat
 
 
-def compute_lambda(B, d, G, beta):
-    J = np.ones((len(d), B.shape[1]))
-    diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G @ beta @ B
+def compute_lambda(B_psi, d, G_star, beta):
+    K = len(d)
+    J = np.ones((K, B_psi.shape[1]))
+    diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G_star @ np.kron(np.eye(K), beta) @ B_psi
     lambda_ = np.exp(diagdJ_plus_GBetaB)
     return lambda_
 
