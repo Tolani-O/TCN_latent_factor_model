@@ -7,7 +7,7 @@ from src.psplines_gradient_method.generate_bsplines import generate_bsplines
 import matplotlib.pyplot as plt
 
 
-degree, L = 3, 2
+
 responsive_units = [85, 143, 76, 107, 116, 95, 46, 222, 73, 118, 15, 43, 34, 13, 17, 18, 79, 172, 221,
                     23, 29, 31, 54, 211, 47, 148, 90, 229, 28, 50, 8, 99, 48, 101, 39, 91, 127, 137,
                     11, 66, 117, 55, 20, 87, 27, 22, 170, 21, 2, 30, 19, 12, 191]
@@ -18,18 +18,18 @@ non_responsive_units = [238, 242, 64, 185, 138, 98, 10, 182, 52, 105, 202, 175, 
 presentation_ids = 49417
 # Manual Implementation
 self = EcephysAnalyzer().initialize()
-binned, spikes, time = self.sample_data(unit_ids=responsive_units + non_responsive_units, presentation_ids=presentation_ids)
+binned, time, spike_time_info = self.sample_data(unit_ids=responsive_units + non_responsive_units, presentation_ids=presentation_ids)
+binned_spikes = np.where(binned >= 1)
+plot_spikes(binned_spikes, self.spike_train_start_offset*1000)
+# plot_binned(binned)
+# self.plot_spikes_from_spike_time_info(spike_time_info)
+
+degree = 3
+L = 2
 K = binned.shape[0]
 dt = round(time[1] - time[0], 3)
-# make plots
-spikes['unit_id'] = spikes['unit_id'].astype(str)
-spikes.plot(x='time_since_stimulus_presentation_onset', y='unit_id', kind='scatter', s=1, yticks=[])
-plt.show()
-binned_spikes = np.where(binned >= 1)
-plot_spikes(binned_spikes)
 
-
-Y = binned
+Y = binned  # K x T
 B = generate_bsplines(time, degree)  # T x T. The coefficient (beta) will be regularized
 P = B.shape[0]
 # start = 190

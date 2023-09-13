@@ -23,6 +23,7 @@ class EcephysAnalyzer:
         self.cache = EcephysProjectCache.from_warehouse(manifest=self.manifest_path)
         self.sessions = self.cache.get_session_table()
         self.structure_list = ['VISp', 'VISl', 'VISal']
+        self.spike_train_start_offset = 0.05
 
     def collate_sessions(self):
         all_units_with_metrics = self.cache.get_unit_analysis_metrics_by_session_type(
@@ -107,7 +108,7 @@ class EcephysAnalyzer:
         self.region_counts = (self.drifting_gratings_spike_times.groupby('ecephys_structure_acronym')['unit_id']
                               .nunique().reset_index(name='num_units'))
         print('Getting spike counts for session: ', self.session_to_analyze)
-        time_bin_edges = np.linspace(-0.05, 2, 2050)  # 2050 edges, 2049 bins
+        time_bin_edges = np.linspace(-self.spike_train_start_offset, 2, 2050)  # 2050 edges, 2049 bins
         # Dimensions: (stimulus_presentation_id, time_bin, unit_id)
         self.drifting_gratings_spike_counts = self.session_data.presentationwise_spike_counts(
             stimulus_presentation_ids=self.presentations.index.values,
@@ -197,7 +198,7 @@ class EcephysAnalyzer:
         data = (data.sum(dim='stimulus_presentation_id').to_dataframe(name='spike_counts')
                 .pivot_table(index='time_relative_to_stimulus_onset', columns='unit_id', values='spike_counts'))
         # Select only units for which the maximum value is greater than 2
-        stop_time = int((stop_time * 1000) + 50)
+        stop_time = int((stop_time * 1000) + self.spike_train_start_offset*1000)
         data = data.loc[:stop_time, data.max() > 2]
 
         # Iterate over sets of {per_plot} columns (units) and save to output folder
@@ -219,15 +220,20 @@ class EcephysAnalyzer:
             # Save the plot to output_dir
             fig.savefig(os.path.join(self.output_dir, f'columns_{i + 1}-{i + per_plot}.png'))
 
-    def sample_data(self, unit_ids=None, presentation_ids=None, regions=None, conditions=None):
+    def sample_data(self, unit_ids=None, presentation_ids=None, regions=None, conditions=None, end_time=0.5):
 
-        times_data = self.filter_spike_times(unit_ids, presentation_ids, regions, conditions)
-        times_data = times_data[times_data['time_since_stimulus_presentation_onset']<=0.5]
-        times_data_units = times_data['unit_id'].unique()
+        spike_time_info = self.filter_spike_times(unit_ids, presentation_ids, regions, conditions)
+        spike_time_info = spike_time_info[spike_time_info['time_since_stimulus_presentation_onset']<=end_time]
+        times_data_units = spike_time_info['unit_id'].unique()
         count_data = self.filter_spike_counts(unit_ids, presentation_ids, regions, conditions)
         count_data = count_data.to_dataframe(name='spike_counts').pivot_table(index='time_relative_to_stimulus_onset',
                                                                               columns='unit_id', values='spike_counts')
-        count_data = count_data[times_data_units].iloc[:550, :]
+        count_data = count_data[times_data_units].iloc[:((end_time+self.spike_train_start_offset)*1000), :]
         time = count_data.index.values
-        return count_data.to_numpy().T, times_data, time
+        return count_data.to_numpy().T, time, spike_time_info
 
+
+    def plot_spikes_from_spike_time_info(self, spike_time_info):
+        spike_time_info['unit_id'] = spike_time_info['unit_id'].astype(str)
+        spike_time_info.plot(x='time_since_stimulus_presentation_onset', y='unit_id', kind='scatter', s=1, yticks=[])
+        plt.show()

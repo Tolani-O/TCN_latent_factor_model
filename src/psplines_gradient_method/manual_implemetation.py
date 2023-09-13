@@ -225,9 +225,14 @@ def log_obj_with_backtracking_line_search_and_time_warping(
 
     smooth_psi, smooth_beta, smooth_G, smooth_d = 1, 1, 1, 1
     K = Y.shape[0]
+    iso_reg = IsotonicRegression()
+    x = np.arange(psi.shape[1])
+    for i in range(psi.shape[0]):
+        psi[i, :] = iso_reg.fit(x, psi[i, :]).predict(x)
     time_matrix = psi @ V
     B_psi = generate_bspline_matrix(B_func_n, time_matrix)
     V_star = np.repeat(V, K, axis=0)
+    beta = np.maximum(beta, 0)
     beta_star = np.kron(np.eye(K), beta)
     diagdJ = d[:, np.newaxis] * J
     GStar_BetaStar = G_star @ beta_star
@@ -255,8 +260,6 @@ def log_obj_with_backtracking_line_search_and_time_warping(
                    ((np.vstack([knots_1] * K) * B_psi_nminus1_1) - (np.vstack([knots_2] * K) * B_psi_nminus1_2)) @
                    (V_star * y_minus_lambdadt_star).T) * mask_psi) @
                   J_psi) - 2 * tau_psi * psi @ Omega_psi
-    iso_reg = IsotonicRegression()
-    x = np.arange(psi.shape[1])
     while ct < max_iters:  # otherwise there isn't a good decrement direction/it runs into overflow limitations
         psi_minus = psi + smooth_psi * dlogL_dpsi
         psi_plus = np.zeros_like(psi_minus)
