@@ -43,5 +43,9 @@ for epoch in range(10):
     dG_errors.append(dG_error)
     dd_errors.append(dd_error)
 
-    print(f"Epoch {epoch}, dd_error {dd_error}, dG_error {dG_error}, dbeta_error {dbeta_error}")
+    print(f"Epoch {epoch}, dpsi_error {dpsi_error}, dbeta_error {dbeta_error}, dG_error {dG_error}, dd_error {dd_error}")
 
+# ideas for debugging:
+# 1. use B as B_psi and compute the gradients. They should be the same as the gradients computed without time warping.
+#       validate that the gradients of d, beta and G this way.
+# 2. Pass in the gradients into the function, compute the difference elementwise, and see where the difference is coming from
