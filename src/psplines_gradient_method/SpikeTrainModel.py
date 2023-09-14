@@ -1,18 +1,9 @@
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
-
-from src.psplines_gradient_method.manual_implemetation import (
-    log_obj_with_backtracking_line_search,
-    log_obj_with_backtracking_line_search_and_time_warping
-)
-from src.psplines_gradient_method.general_functions import (
-    compute_lambda, compute_numerical_grad,
-    create_first_diff_matrix, create_second_diff_matrix, create_masking_matrix
-)
-from src.psplines_gradient_method.generate_bsplines import (
-    generate_bspline_functions, generate_bspline_matrix,
-    bspline_deriv_multipliers
-)
+from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_masking_matrix
+from src.psplines_gradient_method.generate_bsplines import (generate_bspline_functions, generate_bspline_matrix,
+                                                            bspline_deriv_multipliers
+                                                            )
 
 
 class SpikeTrainModel:
@@ -38,7 +29,6 @@ class SpikeTrainModel:
         self.B_func_n = None
         self.Omega_beta = None
         self.Omega_psi = None
-
 
     def initialize(self, L, degree):
 
@@ -109,8 +99,9 @@ class SpikeTrainModel:
         dt = round(self.time[1] - self.time[0], 3)
 
         # set up variables to compute loss
+        B = self.V
         diagdJ = self.d[:, np.newaxis] * self.J  # variable
-        diagdJ_plus_GBetaB = diagdJ + self.G @ self.beta @ self.V  # variable
+        diagdJ_plus_GBetaB = diagdJ + self.G @ self.beta @ B  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
@@ -122,14 +113,14 @@ class SpikeTrainModel:
         # smooth_beta
         ct = 0
         learning_rate = 1
-        dlogL_dbeta = self.G.T @ (self.Y - lambda_del_t) @ self.V.T - 2 * tau_beta * self.beta @ self.Omega_beta
+        dlogL_dbeta = self.G.T @ (self.Y - lambda_del_t) @ B.T - 2 * tau_beta * self.beta @ self.Omega_beta
         while ct < max_iters:  # otherwise there isn't a good decrement direction/it runs into overflow limitations
             beta_minus = self.beta + learning_rate * dlogL_dbeta
             beta_plus = np.maximum(beta_minus, 0)
             gen_grad_curr = (beta_plus - self.beta) / learning_rate
 
             # set up variables to compute loss
-            diagdJ_plus_GBetaB = diagdJ + self.G @ beta_plus @ self.V
+            diagdJ_plus_GBetaB = diagdJ + self.G @ beta_plus @ B
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
             # compute loss
             log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
@@ -155,7 +146,7 @@ class SpikeTrainModel:
 
         # set up variables to compute loss in next round
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        betaB = self.beta @ self.V  # now fixed
+        betaB = self.beta @ B  # now fixed
         diagdJ_plus_GBetaB = diagdJ + self.G @ betaB  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute updated penalty
@@ -197,7 +188,7 @@ class SpikeTrainModel:
 
         # set up variables to compute loss in next round
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        # betaB = self.beta @ self.V  # now fixed
+        # betaB = self.beta @ B  # now fixed
         GBetaB = self.G @ betaB  # now fixed
         diagdJ_plus_GBetaB = diagdJ + GBetaB  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
@@ -254,7 +245,6 @@ class SpikeTrainModel:
 
         return result
 
-
     def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, tau_G,
                                                                psi_factor=1e-2, beta_factor=1e-2,
                                                                G_factor=1e-2, d_factor=1e-2,
@@ -295,7 +285,7 @@ class SpikeTrainModel:
         # psi gradient
         dlogL_dpsi = (((GStar_BetaStar @
                         ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (
-                                    np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
+                                np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
                         (V_star * y_minus_lambdadt_star).T) * self.mask_psi) @
                       self.J_psi) - 2 * tau_psi * self.psi @ self.Omega_psi
         while ct < max_iters:  # otherwise there isn't a good decrement direction/it runs into overflow limitations
@@ -487,3 +477,174 @@ class SpikeTrainModel:
 
         return result
 
+    def compute_numerical_grad(self, tau_beta, tau_G):
+
+        eps = 1e-5
+        # define parameters
+        dt = round(self.time[1] - self.time[0], 3)
+        K = self.Y.shape[0]
+        L = self.beta.shape[0]
+        P = len(self.B_func_n)
+
+        # set up variables to compute loss
+        B = self.V
+        diagdJ = self.d[:, np.newaxis] * self.J  # variable
+        betaB = self.beta @ B  # variable
+        GBetaB = self.G @ betaB  # variable
+        diagdJ_plus_GBetaB = diagdJ + GBetaB  # variable
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # compute loss
+        log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
+        loss = log_likelihood + beta_penalty + G_penalty
+
+        # beta gradient
+        beta_grad = np.zeros_like(self.beta)
+        for l in range(L):
+            for p in range(P):
+                orig = self.beta[l, p]
+                self.beta[l, p] = orig + eps
+
+                diagdJ_plus_GBetaB = diagdJ + self.G @ self.beta @ B  # variable
+                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+                # compute loss
+                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+                beta_penalty_X = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+                loss_beta = log_likelihood + beta_penalty_X + G_penalty
+
+                beta_grad[l, p] = (loss_beta - loss) / eps
+                self.beta[l, p] = orig
+
+        # g_star gradient
+        G_grad = np.zeros_like(self.G)
+        for k in range(K):
+            for l in range(L):
+                orig = self.G[k, l]
+                self.G[k, l] = orig + eps
+
+                diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaB  # variable
+                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+                # compute loss
+                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+                G_penalty_X = - tau_G * np.linalg.norm(self.G_star, ord=1)
+                loss_G = log_likelihood + beta_penalty + G_penalty_X
+
+                G_grad[k, l] = (loss_G - loss) / eps
+                self.G[k, l] = orig
+
+        # d gradient
+        d_grad = np.zeros_like(self.d)
+        for k in range(K):
+            orig = self.d[k]
+            self.d[k] = orig + eps
+
+            diagdJ_X = self.d[:, np.newaxis] * self.J  # variable
+            diagdJ_plus_GBetaB = diagdJ_X + GBetaB  # variable
+            lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+            # compute loss
+            log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+            loss_d = log_likelihood + beta_penalty + G_penalty
+
+            d_grad[k] = (loss_d - loss) / eps
+            self.d[k] = orig
+
+        return beta_grad, G_grad, d_grad
+
+    def compute_numerical_grad_time_warping(self, tau_psi, tau_beta, tau_G):
+
+        eps = 1e-5
+        # define parameters
+        dt = round(self.time[1] - self.time[0], 3)
+        K = self.Y.shape[0]
+        L = self.beta.shape[0]
+        P = len(self.B_func_n)
+        Q = self.V.shape[0]
+
+        # set up variables to compute loss
+        time_matrix = self.psi @ self.V  # variable
+        B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
+        diagdJ = self.d[:, np.newaxis] * self.J  # variable
+        GStar_betaStar = self.G_star @ np.kron(np.eye(K), self.beta)
+        betaStar_BPsi = np.kron(np.eye(K), self.beta) @ B_psi  # variable
+        GStar_betaStar_BPsi = self.G_star @ betaStar_BPsi  # variable
+        diagdJ_plus_GBetaB = diagdJ + GStar_betaStar_BPsi  # variable
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # compute loss
+        log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+        psi_penalty = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
+        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
+        loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
+
+        # psi gradient
+        psi_grad = np.zeros_like(self.psi)
+        for k in range(K):
+            for q in range(Q):
+                orig = self.psi[k, q]
+                self.psi[k, q] = orig + eps
+
+                time_matrix_X = self.psi @ self.V  # variable
+                B_psi_X = generate_bspline_matrix(self.B_func_n, time_matrix_X)  # variable
+                diagdJ_plus_GBetaB = diagdJ + GStar_betaStar @ B_psi_X  # variable
+                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+                # compute loss
+                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+                psi_penalty_X = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
+                loss_psi = log_likelihood + psi_penalty_X + beta_penalty + G_penalty
+
+                psi_grad[k, q] = (loss_psi - loss) / eps
+                self.psi[k, q] = orig
+
+        # beta gradient
+        beta_grad = np.zeros_like(self.beta)
+        for l in range(L):
+            for p in range(P):
+                orig = self.beta[l, p]
+                self.beta[l, p] = orig + eps
+
+                GStar_betaStar_X = self.G_star @ np.kron(np.eye(K), self.beta)
+                diagdJ_plus_GBetaB = diagdJ + GStar_betaStar_X @ B_psi  # variable
+                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+                # compute loss
+                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+                beta_penalty_X = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+                loss_beta = log_likelihood + psi_penalty + beta_penalty_X + G_penalty
+
+                beta_grad[l, p] = (loss_beta - loss) / eps
+                self.beta[l, p] = orig
+
+        # g_star gradient
+        G_star_grad = np.zeros_like(self.G_star)
+        for k in range(K):
+            for l in (np.arange(L) + (k * L)):
+                orig = self.G_star[k, l]
+                self.G_star[k, l] = orig + eps
+
+                diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaStar_BPsi  # variable
+                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+                # compute loss
+                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+                G_penalty_X = - tau_G * np.linalg.norm(self.G_star, ord=1)
+                loss_G = log_likelihood + psi_penalty + beta_penalty + G_penalty_X
+
+                G_star_grad[k, l] = (loss_G - loss) / eps
+                self.G_star[k, l] = orig
+
+        # d gradient
+        d_grad = np.zeros_like(self.d)
+        for k in range(K):
+            orig = self.d[k]
+            self.d[k] = orig + eps
+
+            diagdJ_X = self.d[:, np.newaxis] * self.J  # variable
+            diagdJ_plus_GBetaB = diagdJ_X + GStar_betaStar_BPsi  # variable
+            lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+            # compute loss
+            log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+            loss_d = log_likelihood + psi_penalty + beta_penalty + G_penalty
+
+            d_grad[k] = (loss_d - loss) / eps
+            self.d[k] = orig
+
+        return psi_grad, beta_grad, G_star_grad, d_grad

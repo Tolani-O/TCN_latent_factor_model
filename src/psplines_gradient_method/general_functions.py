@@ -1,8 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.psplines_gradient_method.generate_bsplines import generate_bspline_matrix
-
 
 def create_precision_matrix(P):
     Omega = np.zeros((P, P))
@@ -50,45 +48,6 @@ def compute_lambda(B_psi, d, G_star, beta):
     diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G_star @ np.kron(np.eye(K), beta) @ B_psi
     lambda_ = np.exp(diagdJ_plus_GBetaB)
     return lambda_
-
-
-def compute_numerical_grad(Y, B, d, G_star, beta, psi, Omega_beta, Omega_psi,
-                           tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt, obj_func, eps=1e-6):
-    """Compute numerical gradient of func w.r.t G"""
-    G_star_grad = np.zeros_like(G_star)
-    beta_grad = np.zeros_like(beta)
-    d_grad = np.zeros_like(d)
-    psi_grad = np.zeros_like(psi)
-    result = obj_func(Y, B, d, G_star, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-    lk1 = result["loss"]
-    lk1_G = result["log_likelihood"] + result["beta_penalty"] + result["d_penalty"]
-    for i in range(G.shape[0]):
-        for j in range(G.shape[1]):
-            orig = G[i, j]
-            G[i, j] = orig + eps
-            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-            lk2 = result["log_likelihood"] + result["beta_penalty"] + result["d_penalty"]
-            G[i, j] = orig
-            G_grad[i, j] = (lk2 - lk1_G) / eps
-
-    for i in range(beta.shape[0]):
-        for j in range(beta.shape[1]):
-            orig = beta[i, j]
-            beta[i, j] = orig + eps
-            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-            lk2 = result["loss"]
-            beta[i, j] = orig
-            beta_grad[i, j] = (lk2 - lk1) / eps
-
-    for i in range(d.shape[0]):
-        orig = d[i]
-        d[i] = orig + eps
-        result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-        lk2 = result["loss"]
-        d[i] = orig
-        d_grad[i] = (lk2 - lk1) / eps
-
-    return d_grad, G_grad, beta_grad
 
 
 def plot_spikes(spikes, x_offset=0):

@@ -29,7 +29,6 @@ tau_beta = 80
 tau_G = 2
 
 model = SpikeTrainModel(Y, time).initialize_for_time_warping(L, degree)
-model.train(num_epochs, tau_psi, tau_beta, tau_G)
 
 losses = []
 
