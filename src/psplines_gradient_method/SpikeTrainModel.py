@@ -29,11 +29,13 @@ class SpikeTrainModel:
         self.B_func_n = None
         self.Omega_beta = None
         self.Omega_psi = None
+        self.degree = None
 
     def initialize(self, L, degree):
 
         # parameters
-        self.B_func_n = generate_bspline_functions(self.time, degree)
+        self.degree = degree
+        self.B_func_n = generate_bspline_functions(self.time, self.degree)
 
         time_matrix = self.time[np.newaxis, :]
         # latent factor b-spline matrix. Re-using the self.V matrix. Coefficients would be from beta
@@ -58,9 +60,10 @@ class SpikeTrainModel:
 
         # parameters
         # time warping and latent factor b-spline functions. May need to separate these out later
-        self.B_func_n = generate_bspline_functions(self.time, degree)
-        self.B_func_nminus1 = generate_bspline_functions(self.time, degree, True)  # for psi derivatives
-        self.knots_1, self.knots_2 = bspline_deriv_multipliers(self.time, degree)  # for psi derivatives
+        self.degree = degree
+        self.B_func_n = generate_bspline_functions(self.time, self.degree)
+        self.B_func_nminus1 = generate_bspline_functions(self.time, self.degree, True)  # for psi derivatives
+        self.knots_1, self.knots_2 = bspline_deriv_multipliers(self.time, self.degree)  # for psi derivatives
 
         time_matrix = self.time[np.newaxis, :]
         # time warping b-spline matrix. Coefficients would be from psi
@@ -286,7 +289,7 @@ class SpikeTrainModel:
             B_psi_nminus1_2[i * P:(((i + 1) * P) - 1), :] = B_psi_nminus1_1[((i * P) + 1):((i + 1) * P), :]
         y_minus_lambdadt_star = np.vstack([self.Y - lambda_del_t] * Q)
         # psi gradient
-        dlogL_dpsi = (((GStar_BetaStar @
+        dlogL_dpsi = self.degree * (((GStar_BetaStar @
                         ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (
                                 np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
                         (V_star * y_minus_lambdadt_star).T) * self.mask_psi) @
@@ -577,13 +580,13 @@ class SpikeTrainModel:
 
         # set up variables to compute loss
         time_matrix = self.psi @ self.V  # variable
-        # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0)
+        # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0); tau_psi = 0
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
         diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), self.beta) @ B_psi
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-        psi_penalty = - tau_psi * 0 # np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
+        psi_penalty = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
         beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
         G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
@@ -611,7 +614,7 @@ class SpikeTrainModel:
 
         # set up variables to compute loss
         time_matrix = self.psi @ self.V  # variable
-        # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0)
+        # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0); tau_psi = 0
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)
         GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
         diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + GStar_BetaStar @ B_psi
@@ -624,7 +627,7 @@ class SpikeTrainModel:
             B_psi_nminus1_2[i * P:(((i + 1) * P) - 1), :] = B_psi_nminus1_1[((i * P) + 1):((i + 1) * P), :]
         y_minus_lambdadt_star = np.vstack([self.Y - lambda_del_t] * Q)
         # psi gradient
-        dlogL_dpsi = (((GStar_BetaStar @
+        dlogL_dpsi = self.degree * (((GStar_BetaStar @
                         ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (
                                 np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
                         (V_star * y_minus_lambdadt_star).T) * self.mask_psi) @
