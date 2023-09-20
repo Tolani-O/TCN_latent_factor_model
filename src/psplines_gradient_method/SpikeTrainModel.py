@@ -1,9 +1,8 @@
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
+import multiprocessing as mp
 from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_masking_matrix
-from src.psplines_gradient_method.generate_bsplines import (generate_bspline_functions, generate_bspline_matrix,
-                                                            bspline_deriv_multipliers
-                                                            )
+from src.psplines_gradient_method.generate_bsplines import generate_bspline_functions, generate_bspline_matrix, bspline_deriv_multipliers
 
 
 class SpikeTrainModel:
@@ -642,6 +641,99 @@ class SpikeTrainModel:
         dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
 
         return dlogL_dpsi, dlogL_dbeta, dlogL_dG_star, dlogL_dd
+
+
+    def compute_grad_chunk(self, params):
+        variable, i_start, i_end, eps, J, tau_psi, tau_beta, tau_G, loss, shift = params
+        J2 = 0
+        grad_chunk = np.zeros((i_end - i_start, J))
+        if shift:
+            J2 = J
+            grad_chunk = np.zeros((i_end - i_start, J*self.Y.shape[0]))
+
+        if variable.shape == self.psi.shape:
+            name = 'psi'
+        elif variable.shape == self.beta.shape:
+            name = 'beta'
+        elif variable.shape == self.G_star.shape:
+            name = 'G_star'
+
+        print(f'Computing {name} gradient chunk. i_start: {i_start}, i_end: {i_end}')
+
+        for i in range(i_start, i_end):
+            for j in (np.arange(J) + (i * J2)):
+                orig = variable[i, j]
+                variable[i, j] = orig + eps
+                loss_result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
+                loss_eps = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
+                grad_chunk[i-i_start, j] = (loss_eps - loss) / eps
+                variable[i, j] = orig
+
+        print(f'Completed {name} gradient chunk. i_start: {i_start}, i_end: {i_end}')
+
+        return grad_chunk
+
+
+    def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta, tau_G):
+
+        eps = 1e-5
+        # define parameters
+        K = self.Y.shape[0]
+        L = self.beta.shape[0]
+        P = len(self.B_func_n)
+        Q = self.V.shape[0]
+
+        loss_result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
+        loss = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
+        pool = mp.Pool()
+
+        # psi gradient
+        chunk_size = K // mp.cpu_count()
+        params = []
+        for k in range(0, K, chunk_size):
+            k_start = k
+            k_end = min(k + chunk_size, K)
+            params.append((self.psi, k_start, k_end, eps, Q, tau_psi, tau_beta, tau_G, loss, False))
+
+        results = pool.map(self.compute_grad_chunk, params)
+        psi_grad = np.concatenate([r for r in results])
+
+        # beta gradient
+        chunk_size = L // mp.cpu_count()
+        params = []
+        for l in range(0, L, chunk_size):
+            l_start = l
+            l_end = min(l + chunk_size, L)
+            params.append((self.beta, l_start, l_end, eps, P, tau_psi, tau_beta, tau_G, loss, False))
+
+        results = pool.map(self.compute_grad_chunk, params)
+        beta_grad = np.concatenate([r for r in results])
+
+        # g_star gradient
+        chunk_size = K // mp.cpu_count()
+        params = []
+        for k in range(0, K, chunk_size):
+            k_start = k
+            k_end = min(k + chunk_size, K)
+            params.append((self.G_star, k_start, k_end, eps, L, tau_psi, tau_beta, tau_G, loss, True))
+
+        results = pool.map(self.compute_grad_chunk, params)
+        G_star_grad = np.concatenate([r for r in results])
+
+        pool.close()
+        pool.join()
+
+        # d gradient
+        d_grad = np.zeros_like(self.d)
+        for k in range(K):
+            orig = self.d[k]
+            self.d[k] = orig + eps
+            loss_d = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
+            loss_eps = loss_d['log_likelihood'] + loss_d['psi_penalty'] + loss_d['beta_penalty']
+            d_grad[k] = (loss_eps - loss) / eps
+            self.d[k] = orig
+
+        return psi_grad, beta_grad, G_star_grad, d_grad
 
 
     def compute_numerical_grad_time_warping(self, tau_psi, tau_beta, tau_G):
