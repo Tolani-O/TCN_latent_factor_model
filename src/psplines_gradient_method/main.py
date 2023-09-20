@@ -1,11 +1,7 @@
 import numpy as np
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
-from src.psplines_gradient_method.general_functions import compute_lambda, compute_numerical_grad, \
-    create_first_diff_matrix, create_second_diff_matrix, plot_binned, plot_spikes, \
-    create_masking_matrix
-from src.psplines_gradient_method.generate_bsplines import generate_bspline_functions, generate_bspline_matrix, \
-    bspline_deriv_multipliers
+from src.psplines_gradient_method.general_functions import compute_lambda, plot_binned, plot_spikes
 import matplotlib.pyplot as plt
 
 self = DataAnalyzer().initialize()

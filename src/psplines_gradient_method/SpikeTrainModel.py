@@ -52,6 +52,8 @@ class SpikeTrainModel:
         np.random.seed(0)
         self.d = np.random.rand(K)
 
+        return self
+
     def initialize_for_time_warping(self, L, degree):
 
         # parameters
@@ -155,7 +157,7 @@ class SpikeTrainModel:
         # smooth_G
         ct = 0
         learning_rate = 1
-        dlogL_dG = self.Y - lambda_del_t @ betaB.T
+        dlogL_dG = (self.Y - lambda_del_t) @ betaB.T
         while ct < max_iters:
             G_minus = self.G + learning_rate * dlogL_dG
             G_plus = np.maximum(np.abs(G_minus) - tau_G * learning_rate, 0) * np.sign(G_minus)
@@ -274,7 +276,7 @@ class SpikeTrainModel:
         loss_0 = loss
 
         # smooth_psi
-        print('Optimizing psi')
+        # print('Optimizing psi')
         ct = 0
         learning_rate = 1
         B_psi_nminus1_1 = generate_bspline_matrix(self.B_func_nminus1, time_matrix)  # variable
@@ -332,7 +334,7 @@ class SpikeTrainModel:
         psi_penalty = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
 
         # smooth_beta
-        print('Optimizing beta')
+        # print('Optimizing beta')
         ct = 0
         learning_rate = 1
         dlogL_dbeta = ((self.G_star @ self.I_beta_L).T @
@@ -380,7 +382,7 @@ class SpikeTrainModel:
         beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
 
         # smooth_G
-        print('Optimizing G_star')
+        # print('Optimizing G_star')
         ct = 0
         learning_rate = 1
         dlogL_dG_star = ((self.Y - lambda_del_t) @ betaStar_BPsi.T) * self.mask_G
@@ -426,7 +428,7 @@ class SpikeTrainModel:
         G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
 
         # smooth_d
-        print('Optimizing d')
+        # print('Optimizing d')
         ct = 0
         learning_rate = 1
         dLogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
@@ -500,7 +502,7 @@ class SpikeTrainModel:
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
         beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
-        G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
+        G_penalty = - tau_G * np.linalg.norm(self.G, ord=1)
         loss = log_likelihood + beta_penalty + G_penalty
 
         # beta gradient
@@ -527,11 +529,11 @@ class SpikeTrainModel:
                 orig = self.G[k, l]
                 self.G[k, l] = orig + eps
 
-                diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaB  # variable
+                diagdJ_plus_GBetaB = diagdJ + self.G @ betaB  # variable
                 lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
                 # compute loss
                 log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-                G_penalty_X = - tau_G * np.linalg.norm(self.G_star, ord=1)
+                G_penalty_X = - tau_G * np.linalg.norm(self.G, ord=1)
                 loss_G = log_likelihood + beta_penalty + G_penalty_X
 
                 G_grad[k, l] = (loss_G - loss) / eps
@@ -582,7 +584,7 @@ class SpikeTrainModel:
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
 
         # psi gradient
-        print('psi gradients')
+        # print('psi gradients')
         psi_grad = np.zeros_like(self.psi)
         for k in range(K):
             for q in range(Q):
@@ -602,7 +604,7 @@ class SpikeTrainModel:
                 self.psi[k, q] = orig
 
         # beta gradient
-        print('beta gradients')
+        # print('beta gradients')
         beta_grad = np.zeros_like(self.beta)
         for l in range(L):
             for p in range(P):
@@ -621,7 +623,7 @@ class SpikeTrainModel:
                 self.beta[l, p] = orig
 
         # g_star gradient
-        print('g_star gradients')
+        # print('g_star gradients')
         G_star_grad = np.zeros_like(self.G_star)
         for k in range(K):
             for l in (np.arange(L) + (k * L)):
@@ -639,7 +641,7 @@ class SpikeTrainModel:
                 self.G_star[k, l] = orig
 
         # d gradient
-        print('d gradients')
+        # print('d gradients')
         d_grad = np.zeros_like(self.d)
         for k in range(K):
             orig = self.d[k]
