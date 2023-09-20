@@ -41,19 +41,19 @@ def compute_lambda(B, d, G, beta):
     return lambda_
 
 
-def compute_numerical_grad(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt, obj_func, eps=1e-6):
+def compute_numerical_grad(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt, obj_func, eps=1e-4):
     """Compute numerical gradient of func w.r.t G"""
     G_grad = np.zeros_like(G)
     beta_grad = np.zeros_like(beta)
     d_grad = np.zeros_like(d)
-    result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+    result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
     lk1 = result["loss"]
     lk1_G = result["log_likelihood"] + result["beta_penalty"] + result["d_penalty"]
     for i in range(G.shape[0]):
         for j in range(G.shape[1]):
             orig = G[i, j]
             G[i, j] = orig + eps
-            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
             lk2 = result["log_likelihood"] + result["beta_penalty"] + result["d_penalty"]
             G[i, j] = orig
             G_grad[i, j] = (lk2 - lk1_G) / eps
@@ -62,7 +62,7 @@ def compute_numerical_grad(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smoo
         for j in range(beta.shape[1]):
             orig = beta[i, j]
             beta[i, j] = orig + eps
-            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+            result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
             lk2 = result["loss"]
             beta[i, j] = orig
             beta_grad[i, j] = (lk2 - lk1) / eps
@@ -70,7 +70,7 @@ def compute_numerical_grad(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smoo
     for i in range(d.shape[0]):
         orig = d[i]
         d[i] = orig + eps
-        result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
+        result = obj_func(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
         lk2 = result["loss"]
         d[i] = orig
         d_grad[i] = (lk2 - lk1) / eps
