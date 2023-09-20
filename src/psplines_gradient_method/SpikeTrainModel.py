@@ -200,9 +200,9 @@ class SpikeTrainModel:
         # smooth_d
         ct = 0
         learning_rate = 1
-        dLogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
+        dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
         while ct < max_iters:
-            d_plus = self.d + learning_rate * dLogL_dd
+            d_plus = self.d + learning_rate * dlogL_dd
 
             # set up variables to compute loss
             diagdJ_plus_GBetaB = d_plus[:, np.newaxis] * self.J + GBetaB
@@ -212,7 +212,7 @@ class SpikeTrainModel:
             loss_next = log_likelihood + beta_penalty + G_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.sum(dLogL_dd * dLogL_dd):
+            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd * dlogL_dd):
                 break
             learning_rate *= d_factor
             ct += 1
@@ -236,7 +236,7 @@ class SpikeTrainModel:
             "G_loss_increase": loss_G - loss_beta,
             "smooth_G": smooth_G,
             "iters_G": ct_G,
-            "dLogL_dd": dLogL_dd,
+            "dlogL_dd": dlogL_dd,
             "d_loss_increase": loss_d - loss_G,
             "smooth_d": smooth_d,
             "iters_d": ct_d,
@@ -431,9 +431,9 @@ class SpikeTrainModel:
         # print('Optimizing d')
         ct = 0
         learning_rate = 1
-        dLogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
+        dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
         while ct < max_iters:
-            d_plus = self.d + learning_rate * dLogL_dd
+            d_plus = self.d + learning_rate * dlogL_dd
 
             # set up variables to compute loss
             diagdJ_plus_GBetaB = d_plus[:, np.newaxis] * self.J + GStar_BetaStar_BPsi
@@ -443,7 +443,7 @@ class SpikeTrainModel:
             loss_next = log_likelihood + psi_penalty + beta_penalty + G_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.sum(dLogL_dd * dLogL_dd):
+            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd * dlogL_dd):
                 break
             learning_rate *= d_factor
             ct += 1
@@ -471,7 +471,7 @@ class SpikeTrainModel:
             "G_loss_increase": loss_G - loss_beta,
             "smooth_G": smooth_G,
             "iters_G": ct_G,
-            "dLogL_dd": dLogL_dd,
+            "dlogL_dd": dlogL_dd,
             "d_loss_increase": loss_d - loss_G,
             "smooth_d": smooth_d,
             "iters_d": ct_d,
@@ -522,7 +522,7 @@ class SpikeTrainModel:
                 beta_grad[l, p] = (loss_beta - loss) / eps
                 self.beta[l, p] = orig
 
-        # g_star gradient
+        # g gradient
         G_grad = np.zeros_like(self.G)
         for k in range(K):
             for l in range(L):
