@@ -531,7 +531,10 @@ class SpikeTrainModel:
         L = self.beta.shape[0]
         P = len(self.B_func_n)
 
-        loss = self.compute_loss(tau_beta, tau_G)['loss']
+        result = self.compute_loss(tau_beta, tau_G)
+        loss = result['loss']
+        log_likelihood = result['log_likelihood']
+        beta_penalty = result['beta_penalty']
 
         # beta gradient
         beta_grad = np.zeros_like(self.beta)
@@ -549,8 +552,10 @@ class SpikeTrainModel:
             for l in range(L):
                 orig = self.G[k, l]
                 self.G[k, l] = orig + eps
-                loss_G = self.compute_loss(tau_beta, tau_G)['loss']
-                G_grad[k, l] = (loss_G - loss) / eps
+                result = self.compute_loss(tau_beta, tau_G)
+                log_likelihood_G = result['log_likelihood']
+                beta_penalty_G = result['beta_penalty']
+                G_grad[k, l] = ((log_likelihood_G+beta_penalty_G) - (log_likelihood+beta_penalty)) / eps
                 self.G[k, l] = orig
 
         # d gradient
@@ -569,44 +574,24 @@ class SpikeTrainModel:
         # define parameters
         dt = round(self.time[1] - self.time[0], 3)
         K = self.Y.shape[0]
-        P = len(self.B_func_n)
-        Q = self.V.shape[0]
-        iso_reg = IsotonicRegression()
-        x = np.arange(Q)
-        V_star = np.repeat(self.V, K, axis=0)
 
         # set up variables to compute loss
-        # time_matrix = self.psi @ self.V  # variable
-        time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0)
+        time_matrix = self.psi @ self.V  # variable
+        # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0)
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
-
-        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), self.beta) @ B_psi  # variable
-        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), self.beta) @ B_psi
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-        psi_penalty = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
+        psi_penalty = - tau_psi * 0 # np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
         beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
         G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
 
-
-
-        # define parameters
-        dt = round(self.time[1] - self.time[0], 3)
-
-        # set up variables to compute loss
-        B = self.V
-        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G @ self.beta @ B
-        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
-        # compute loss
-        log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
-        G_penalty = - tau_G * np.linalg.norm(self.G, ord=1)
-        loss = log_likelihood + beta_penalty + G_penalty
-
         result = {
             "loss": loss,
             "log_likelihood": log_likelihood,
+            "psi_penalty": psi_penalty,
             "beta_penalty": beta_penalty,
             "G_penalty": G_penalty
         }
@@ -614,118 +599,102 @@ class SpikeTrainModel:
         return result
 
 
-    def compute_analytical_grad_time_warping(self, tau_beta):
+    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta):
         # define parameters
         dt = round(self.time[1] - self.time[0], 3)
+        K = self.Y.shape[0]
+        P = len(self.B_func_n)
+        Q = self.V.shape[0]
+        iso_reg = IsotonicRegression()
+        x = np.arange(Q)
+        V_star = np.repeat(self.V, K, axis=0)
 
-        # set up variables to compute gradients
-        B = self.V
-        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G @ self.beta @ B  # variable
-        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # set up variables to compute loss
+        time_matrix = self.psi @ self.V  # variable
+        # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0)
+        B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)
+        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + GStar_BetaStar @ B_psi
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
         # compute gradients
-        dlogL_dbeta = self.G.T @ (self.Y - lambda_del_t) @ B.T - 2 * tau_beta * self.beta @ self.Omega_beta
-        dlogL_dG = (self.Y - lambda_del_t) @ (self.beta @ B).T
+        B_psi_nminus1_1 = generate_bspline_matrix(self.B_func_nminus1, time_matrix)  # variable
+        B_psi_nminus1_2 = np.zeros_like(B_psi_nminus1_1)  # variable
+        for i in range(K):
+            # Copy rows from A to B with a shift
+            B_psi_nminus1_2[i * P:(((i + 1) * P) - 1), :] = B_psi_nminus1_1[((i * P) + 1):((i + 1) * P), :]
+        y_minus_lambdadt_star = np.vstack([self.Y - lambda_del_t] * Q)
+        # psi gradient
+        dlogL_dpsi = (((GStar_BetaStar @
+                        ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (
+                                np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
+                        (V_star * y_minus_lambdadt_star).T) * self.mask_psi) @
+                      self.J_psi) - 2 * tau_psi * self.psi @ self.Omega_psi
+
+        dlogL_dbeta = ((self.G_star @ self.I_beta_L).T @
+                       (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
+                       self.I_beta_P - 2 * tau_beta * self.beta @ self.Omega_beta)
+
+        dlogL_dG_star = ((self.Y - lambda_del_t) @ (np.kron(np.eye(K), self.beta) @ B_psi).T) * self.mask_G
+
         dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
 
-        return dlogL_dbeta, dlogL_dG, dlogL_dd
+        return dlogL_dpsi, dlogL_dbeta, dlogL_dG_star, dlogL_dd
+
 
     def compute_numerical_grad_time_warping(self, tau_psi, tau_beta, tau_G):
 
         eps = 1e-5
         # define parameters
-        dt = round(self.time[1] - self.time[0], 3)
         K = self.Y.shape[0]
         L = self.beta.shape[0]
         P = len(self.B_func_n)
         Q = self.V.shape[0]
 
-        # set up variables to compute loss
-        time_matrix = self.psi @ self.V  # variable
-        B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
-        diagdJ = self.d[:, np.newaxis] * self.J  # variable
-        GStar_betaStar = self.G_star @ np.kron(np.eye(K), self.beta)
-        betaStar_BPsi = np.kron(np.eye(K), self.beta) @ B_psi  # variable
-        GStar_betaStar_BPsi = self.G_star @ betaStar_BPsi  # variable
-        diagdJ_plus_GBetaB = diagdJ + GStar_betaStar_BPsi  # variable
-        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-        # compute loss
-        log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-        psi_penalty = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
-        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
-        G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
-        loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
+        result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
+        loss = result['loss']
+        log_likelihood = result['log_likelihood']
+        psi_penalty = result['psi_penalty']
+        beta_penalty = result['beta_penalty']
 
         # psi gradient
-        # print('psi gradients')
         psi_grad = np.zeros_like(self.psi)
         for k in range(K):
             for q in range(Q):
                 orig = self.psi[k, q]
                 self.psi[k, q] = orig + eps
-
-                time_matrix_X = self.psi @ self.V  # variable
-                B_psi_X = generate_bspline_matrix(self.B_func_n, time_matrix_X)  # variable
-                diagdJ_plus_GBetaB = diagdJ + GStar_betaStar @ B_psi_X  # variable
-                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-                # compute loss
-                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-                psi_penalty_X = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
-                loss_psi = log_likelihood + psi_penalty_X + beta_penalty + G_penalty
-
+                loss_psi = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)['loss']
                 psi_grad[k, q] = (loss_psi - loss) / eps
                 self.psi[k, q] = orig
 
         # beta gradient
-        # print('beta gradients')
         beta_grad = np.zeros_like(self.beta)
         for l in range(L):
             for p in range(P):
                 orig = self.beta[l, p]
                 self.beta[l, p] = orig + eps
-
-                GStar_betaStar_X = self.G_star @ np.kron(np.eye(K), self.beta)
-                diagdJ_plus_GBetaB = diagdJ + GStar_betaStar_X @ B_psi  # variable
-                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-                # compute loss
-                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-                beta_penalty_X = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
-                loss_beta = log_likelihood + psi_penalty + beta_penalty_X + G_penalty
-
+                loss_beta = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)['loss']
                 beta_grad[l, p] = (loss_beta - loss) / eps
                 self.beta[l, p] = orig
 
         # g_star gradient
-        # print('g_star gradients')
         G_star_grad = np.zeros_like(self.G_star)
         for k in range(K):
             for l in (np.arange(L) + (k * L)):
                 orig = self.G_star[k, l]
                 self.G_star[k, l] = orig + eps
-
-                diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaStar_BPsi  # variable
-                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-                # compute loss
-                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-                G_penalty_X = - tau_G * np.linalg.norm(self.G_star, ord=1)
-                loss_G = log_likelihood + psi_penalty + beta_penalty + G_penalty_X
-
-                G_star_grad[k, l] = (loss_G - loss) / eps
+                result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
+                log_likelihood_G = result['log_likelihood']
+                psi_penalty_G = result['psi_penalty']
+                beta_penalty_G = result['beta_penalty']
+                G_star_grad[k, l] = ((log_likelihood_G+psi_penalty_G+beta_penalty_G) - (log_likelihood+psi_penalty+beta_penalty)) / eps
                 self.G_star[k, l] = orig
 
         # d gradient
-        # print('d gradients')
         d_grad = np.zeros_like(self.d)
         for k in range(K):
             orig = self.d[k]
             self.d[k] = orig + eps
-
-            diagdJ_X = self.d[:, np.newaxis] * self.J  # variable
-            diagdJ_plus_GBetaB = diagdJ_X + GStar_betaStar_BPsi  # variable
-            lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-            # compute loss
-            log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-            loss_d = log_likelihood + psi_penalty + beta_penalty + G_penalty
-
+            loss_d = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)['loss']
             d_grad[k] = (loss_d - loss) / eps
             self.d[k] = orig
 
