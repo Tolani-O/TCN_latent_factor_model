@@ -483,27 +483,55 @@ class SpikeTrainModel:
 
         return result
 
-    def compute_numerical_grad(self, tau_beta, tau_G):
-
-        eps = 1e-5
+    def compute_loss(self, tau_beta, tau_G):
         # define parameters
         dt = round(self.time[1] - self.time[0], 3)
-        K = self.Y.shape[0]
-        L = self.beta.shape[0]
-        P = len(self.B_func_n)
 
         # set up variables to compute loss
         B = self.V
-        diagdJ = self.d[:, np.newaxis] * self.J  # variable
-        betaB = self.beta @ B  # variable
-        GBetaB = self.G @ betaB  # variable
-        diagdJ_plus_GBetaB = diagdJ + GBetaB  # variable
-        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G @ self.beta @ B
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
         beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
         G_penalty = - tau_G * np.linalg.norm(self.G, ord=1)
         loss = log_likelihood + beta_penalty + G_penalty
+
+        result = {
+            "loss": loss,
+            "log_likelihood": log_likelihood,
+            "beta_penalty": beta_penalty,
+            "G_penalty": G_penalty
+        }
+
+        return result
+
+
+    def compute_analytical_grad(self, tau_beta):
+        # define parameters
+        dt = round(self.time[1] - self.time[0], 3)
+
+        # set up variables to compute gradients
+        B = self.V
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G @ self.beta @ B  # variable
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # compute gradients
+        dlogL_dbeta = self.G.T @ (self.Y - lambda_del_t) @ B.T - 2 * tau_beta * self.beta @ self.Omega_beta
+        dlogL_dG = (self.Y - lambda_del_t) @ (self.beta @ B).T
+        dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
+
+        return dlogL_dbeta, dlogL_dG, dlogL_dd
+
+
+    def compute_numerical_grad(self, tau_beta, tau_G):
+
+        eps = 1e-5
+        # define parameters
+        K = self.Y.shape[0]
+        L = self.beta.shape[0]
+        P = len(self.B_func_n)
+
+        loss = self.compute_loss(tau_beta, tau_G)['loss']
 
         # beta gradient
         beta_grad = np.zeros_like(self.beta)
@@ -511,14 +539,7 @@ class SpikeTrainModel:
             for p in range(P):
                 orig = self.beta[l, p]
                 self.beta[l, p] = orig + eps
-
-                diagdJ_plus_GBetaB = diagdJ + self.G @ self.beta @ B  # variable
-                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-                # compute loss
-                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-                beta_penalty_X = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
-                loss_beta = log_likelihood + beta_penalty_X + G_penalty
-
+                loss_beta = self.compute_loss(tau_beta, tau_G)['loss']
                 beta_grad[l, p] = (loss_beta - loss) / eps
                 self.beta[l, p] = orig
 
@@ -528,14 +549,7 @@ class SpikeTrainModel:
             for l in range(L):
                 orig = self.G[k, l]
                 self.G[k, l] = orig + eps
-
-                diagdJ_plus_GBetaB = diagdJ + self.G @ betaB  # variable
-                lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-                # compute loss
-                log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-                G_penalty_X = - tau_G * np.linalg.norm(self.G, ord=1)
-                loss_G = log_likelihood + beta_penalty + G_penalty_X
-
+                loss_G = self.compute_loss(tau_beta, tau_G)['loss']
                 G_grad[k, l] = (loss_G - loss) / eps
                 self.G[k, l] = orig
 
@@ -544,18 +558,76 @@ class SpikeTrainModel:
         for k in range(K):
             orig = self.d[k]
             self.d[k] = orig + eps
-
-            diagdJ_X = self.d[:, np.newaxis] * self.J  # variable
-            diagdJ_plus_GBetaB = diagdJ_X + GBetaB  # variable
-            lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-            # compute loss
-            log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-            loss_d = log_likelihood + beta_penalty + G_penalty
-
+            loss_d = self.compute_loss(tau_beta, tau_G)['loss']
             d_grad[k] = (loss_d - loss) / eps
             self.d[k] = orig
 
         return beta_grad, G_grad, d_grad
+
+
+    def compute_loss_time_warping(self, tau_psi, tau_beta, tau_G):
+        # define parameters
+        dt = round(self.time[1] - self.time[0], 3)
+        K = self.Y.shape[0]
+        P = len(self.B_func_n)
+        Q = self.V.shape[0]
+        iso_reg = IsotonicRegression()
+        x = np.arange(Q)
+        V_star = np.repeat(self.V, K, axis=0)
+
+        # set up variables to compute loss
+        # time_matrix = self.psi @ self.V  # variable
+        time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0)
+        B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
+
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), self.beta) @ B_psi  # variable
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # compute loss
+        log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+        psi_penalty = - tau_psi * np.sum(np.diag(self.psi @ self.Omega_psi @ self.psi.T))
+        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
+        loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
+
+
+
+        # define parameters
+        dt = round(self.time[1] - self.time[0], 3)
+
+        # set up variables to compute loss
+        B = self.V
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G @ self.beta @ B
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
+        # compute loss
+        log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        G_penalty = - tau_G * np.linalg.norm(self.G, ord=1)
+        loss = log_likelihood + beta_penalty + G_penalty
+
+        result = {
+            "loss": loss,
+            "log_likelihood": log_likelihood,
+            "beta_penalty": beta_penalty,
+            "G_penalty": G_penalty
+        }
+
+        return result
+
+
+    def compute_analytical_grad_time_warping(self, tau_beta):
+        # define parameters
+        dt = round(self.time[1] - self.time[0], 3)
+
+        # set up variables to compute gradients
+        B = self.V
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G @ self.beta @ B  # variable
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # compute gradients
+        dlogL_dbeta = self.G.T @ (self.Y - lambda_del_t) @ B.T - 2 * tau_beta * self.beta @ self.Omega_beta
+        dlogL_dG = (self.Y - lambda_del_t) @ (self.beta @ B).T
+        dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
+
+        return dlogL_dbeta, dlogL_dG, dlogL_dd
 
     def compute_numerical_grad_time_warping(self, tau_psi, tau_beta, tau_G):
 
