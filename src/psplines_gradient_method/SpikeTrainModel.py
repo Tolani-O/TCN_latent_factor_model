@@ -644,12 +644,10 @@ class SpikeTrainModel:
 
 
     def compute_grad_chunk(self, params):
-        variable, i_start, i_end, eps, J, tau_psi, tau_beta, tau_G, loss, shift = params
+        variable, i_start, i_end, eps, tau_psi, tau_beta, tau_G, loss = params
+        J = variable.shape[1]
         J2 = 0
         grad_chunk = np.zeros((i_end - i_start, J))
-        if shift:
-            J2 = J
-            grad_chunk = np.zeros((i_end - i_start, J*self.Y.shape[0]))
 
         if variable.shape == self.psi.shape:
             name = 'psi'
@@ -657,8 +655,10 @@ class SpikeTrainModel:
             name = 'beta'
         elif variable.shape == self.G_star.shape:
             name = 'G_star'
+            J = variable.shape[1]//variable.shape[0]
+            J2 = J
 
-        print(f'Computing {name} gradient chunk. i_start: {i_start}, i_end: {i_end}')
+        print(f'Starting {name} gradient chunk. i_start: {i_start}, i_end: {i_end}')
 
         for i in range(i_start, i_end):
             for j in (np.arange(J) + (i * J2)):
@@ -680,8 +680,6 @@ class SpikeTrainModel:
         # define parameters
         K = self.Y.shape[0]
         L = self.beta.shape[0]
-        P = len(self.B_func_n)
-        Q = self.V.shape[0]
 
         loss_result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
         loss = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
@@ -689,33 +687,39 @@ class SpikeTrainModel:
 
         # psi gradient
         chunk_size = K // mp.cpu_count()
+        if chunk_size == 0:
+            chunk_size = K
         params = []
         for k in range(0, K, chunk_size):
             k_start = k
             k_end = min(k + chunk_size, K)
-            params.append((self.psi, k_start, k_end, eps, Q, tau_psi, tau_beta, tau_G, loss, False))
+            params.append((self.psi, k_start, k_end, eps, tau_psi, tau_beta, tau_G, loss))
 
         results = pool.map(self.compute_grad_chunk, params)
         psi_grad = np.concatenate([r for r in results])
 
         # beta gradient
         chunk_size = L // mp.cpu_count()
+        if chunk_size == 0:
+            chunk_size = L
         params = []
         for l in range(0, L, chunk_size):
             l_start = l
             l_end = min(l + chunk_size, L)
-            params.append((self.beta, l_start, l_end, eps, P, tau_psi, tau_beta, tau_G, loss, False))
+            params.append((self.beta, l_start, l_end, eps, tau_psi, tau_beta, tau_G, loss))
 
         results = pool.map(self.compute_grad_chunk, params)
         beta_grad = np.concatenate([r for r in results])
 
         # g_star gradient
         chunk_size = K // mp.cpu_count()
+        if chunk_size == 0:
+            chunk_size = K
         params = []
         for k in range(0, K, chunk_size):
             k_start = k
             k_end = min(k + chunk_size, K)
-            params.append((self.G_star, k_start, k_end, eps, L, tau_psi, tau_beta, tau_G, loss, True))
+            params.append((self.G_star, k_start, k_end, eps, tau_psi, tau_beta, tau_G, loss))
 
         results = pool.map(self.compute_grad_chunk, params)
         G_star_grad = np.concatenate([r for r in results])
