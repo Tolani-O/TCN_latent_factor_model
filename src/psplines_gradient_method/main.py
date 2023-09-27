@@ -4,6 +4,7 @@ from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
 from src.psplines_gradient_method.general_functions import compute_lambda, plot_binned, plot_spikes
 import matplotlib.pyplot as plt
+import time
 
 self = DataAnalyzer().initialize()
 binned, time = self.sample_data()
@@ -29,95 +30,99 @@ model = SpikeTrainModel(Y, time).initialize_for_time_warping(L, degree)
 
 losses = []
 
-psi_loss_increase = []
+alpha_loss_increase = []
 d_loss_increase = []
 G_loss_increase = []
 beta_loss_increase = []
 
-psi_learning_rate = []
+alpha_learning_rate = []
 beta_learning_rate = []
 G_learning_rate = []
 d_learning_rate = []
 
-psi_iters = []
+alpha_iters = []
 beta_iters = []
 G_iters = []
 d_iters = []
 
+total_time = 0
+epoch_time = 0
 for epoch in range(num_epochs):
-    # Forward pass and gradient computation
+    start_time = time.time()  # Record the start time of the epoch
 
     result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_G)
     loss = result["loss"]
     psi_penalty = result["psi_penalty"]
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
-    dpsi = result["dlogL_dpsi"]
+    dalpha = result["dlogL_dalpha"]
     dbeta = result["dlogL_dbeta"]
     dG_star = result["dlogL_dG"]
     dd = result["dlogL_dd"]
 
     losses.append(loss)
 
-    psi_loss_increase.append(result["psi_loss_increase"])
+    alpha_loss_increase.append(result["alpha_loss_increase"])
     beta_loss_increase.append(result["beta_loss_increase"])
     G_loss_increase.append(result["G_loss_increase"])
     d_loss_increase.append(result["d_loss_increase"])
 
-    psi_learning_rate.append(result["smooth_psi"])
+    alpha_learning_rate.append(result["smooth_alpha"])
     beta_learning_rate.append(result["smooth_beta"])
     G_learning_rate.append(result["smooth_G"])
     d_learning_rate.append(result["smooth_d"])
 
-    psi_iters.append(result["iters_psi"])
+    alpha_iters.append(result["iters_alpha"])
     beta_iters.append(result["iters_beta"])
     G_iters.append(result["iters_G"])
     d_iters.append(result["iters_d"])
 
-    if epoch % 100 == 0:
-        print(f"Epoch {epoch}, Loss {loss}")
+    end_time = time.time()  # Record the end time of the epoch
+    elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
+    epoch_time += elapsed_time  # Record the elapsed time for the epoch
+    total_time += elapsed_time  # Calculate the total time for training
 
-# num_epochs = len(losses)
-# losses = np.array(losses)
-# G_smooths = np.array(G_smooths)
-# beta_smooths = np.array(beta_smooths)
-# d_smooths = np.array(d_smooths)
-# smooth_G = np.array(smooth_G)
-# smooth_beta = np.array(smooth_beta)
-# smooth_d = np.array(smooth_d)
-# iters_d = np.array(iters_d)
-# iters_G = np.array(iters_G)
-# iters_beta = np.array(iters_beta)
-# plt.plot(np.arange(0, num_epochs), losses[0:])
-# plt.title('Losses')
-# plt.show()
-# plt.plot(np.arange(1, num_epochs), G_smooths)
-# plt.title('G Smooths Numeric')
-# plt.show()
-# plt.plot(np.arange(1, num_epochs), beta_smooths)
-# plt.title('Beta Smooths Numeric')
-# plt.show()
-# plt.plot(np.arange(1, num_epochs), d_smooths)
-# plt.title('d Smooths Numeric')
-# plt.show()
-# plt.plot(np.arange(0, num_epochs), 1 / smooth_G)
-# plt.title('G Smooths Line Search')
-# plt.show()
-# plt.plot(np.arange(0, num_epochs), 1 / smooth_beta)
-# plt.title('Beta Smooths  Line Search')
-# plt.show()
-# plt.plot(np.arange(0, num_epochs), 1 / smooth_d)
-# plt.title('d Smooths  Line Search')
-# plt.show()
-# plt.plot(np.arange(0, num_epochs), iters_G)
-# plt.title('G Iters')
-# plt.show()
-# plt.plot(np.arange(0, num_epochs), iters_beta)
-# plt.title('Beta Iters')
-# plt.show()
-# plt.plot(np.arange(0, num_epochs), iters_d)
-# plt.title('d Iters')
-# plt.show()
+    if epoch % 100 == 0:
+        print(f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time:.2f} s, Total Time: {total_time:.2f} s")
+        epoch_time = 0  # Reset the epoch time
+
+num_epochs = len(losses)
+losses = np.array(losses)
+alpha_learning_rate = np.array(alpha_learning_rate)
+beta_learning_rate = np.array(beta_learning_rate)
+G_learning_rate = np.array(G_learning_rate)
+d_learning_rate = np.array(d_learning_rate)
+alpha_iters = np.array(alpha_iters)
+beta_iters = np.array(beta_iters)
+G_iters = np.array(G_iters)
+d_iters = np.array(d_iters)
+plt.plot(np.arange(0, num_epochs), losses[0:])
+plt.title('Losses')
+plt.show()
+plt.plot(np.arange(0, num_epochs), alpha_learning_rate)
+plt.title('Alpha Learning Rates')
+plt.show()
+plt.plot(np.arange(0, num_epochs), beta_learning_rate)
+plt.title('Beta Learning Rates')
+plt.show()
+plt.plot(np.arange(0, num_epochs), G_learning_rate)
+plt.title('G Learning Rates')
+plt.show()
+plt.plot(np.arange(1, num_epochs), d_learning_rate)
+plt.title('d Learning Rates')
+plt.show()
+plt.plot(np.arange(0, num_epochs), alpha_iters)
+plt.title('Alpha Iters')
+plt.show()
+plt.plot(np.arange(0, num_epochs), beta_iters)
+plt.title('Beta Iters')
+plt.show()
+plt.plot(np.arange(0, num_epochs), G_iters)
+plt.title('G Iters')
+plt.show()
+plt.plot(np.arange(0, num_epochs), d_iters)
+plt.title('d Iters')
+plt.show()
 
 time_matrix = model.psi @ model.V
 B_psi = generate_bspline_matrix(model.B_func_n, time_matrix)

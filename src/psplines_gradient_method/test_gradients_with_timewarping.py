@@ -19,15 +19,15 @@ def main_function():
 
     epoch = 0
     for epoch in range(1):
-        dpsi, dbeta, dG, dd = model.compute_analytical_grad_time_warping(tau_psi, tau_beta)
-        dpsi_num, dbeta_num, dG_num, dd_num = model.compute_numerical_grad_time_warping_parallel(tau_psi, tau_beta, tau_G)
+        dalpha, dbeta, dG, dd = model.compute_analytical_grad_time_warping(tau_psi, tau_beta)
+        dalpha_num, dbeta_num, dG_num, dd_num = model.compute_numerical_grad_time_warping_parallel(tau_psi, tau_beta, tau_G)
 
-        dpsi_error = np.mean(np.square(dpsi - dpsi_num))
+        dalpha_error = np.mean(np.square(dalpha - dalpha_num))
         dbeta_error = np.mean(np.square(dbeta - dbeta_num))
         dG_error = np.mean(np.square(dG - dG_num))
         dd_error = np.mean(np.square(dd - dd_num))
 
-        print(f"Epoch {epoch}, dpsi_error {dpsi_error}, dbeta_error {dbeta_error}, dG_error {dG_error}, dd_error {dd_error}")
+        print(f"Epoch {epoch}, dalpha_error {dalpha_error}, dbeta_error {dbeta_error}, dG_error {dG_error}, dd_error {dd_error}")
 
         # self.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_G)
 
