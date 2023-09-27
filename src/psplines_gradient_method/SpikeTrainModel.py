@@ -9,7 +9,7 @@ class SpikeTrainModel:
     def __init__(self, Y, time):
         # variables
         self.G_star = None
-        self.beta = None
+        self.gamma = None
         self.d = None
         self.alpha = None
 
@@ -69,7 +69,7 @@ class SpikeTrainModel:
         np.random.seed(0)
         self.G_star = np.random.rand(K, K * L) * self.mask_G
         np.random.seed(0)
-        self.beta = np.maximum(np.random.rand(L, P), 0)
+        self.gamma = np.random.rand(L, P)
         np.random.seed(0)
         self.d = np.random.rand(K)
         np.random.seed(0)
@@ -78,7 +78,7 @@ class SpikeTrainModel:
         return self
 
     def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, tau_G,
-                                                               alpha_factor=1e-2, beta_factor=1e-2,
+                                                               alpha_factor=1e-2, gamma_factor=1e-2,
                                                                G_factor=1e-2, d_factor=1e-2,
                                                                alpha=0.3, max_iters=4):
         # define parameters
@@ -94,13 +94,14 @@ class SpikeTrainModel:
         time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
         diagdJ = self.d[:, np.newaxis] * self.J  # variable
-        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
+        beta = np.exp(self.gamma)  # variable
+        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)  # variable
         diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
         psi_penalty = - tau_psi * np.sum(np.diag(psi_norm @ self.Omega_psi @ psi_norm.T))
-        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
         G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
         loss_0 = loss
@@ -148,12 +149,12 @@ class SpikeTrainModel:
             ct += 1
 
         if ct < max_iters:
-            ct_psi = ct
+            ct_alpha = ct
             smooth_alpha = learning_rate
             loss = loss_next
             self.alpha = alpha_plus
         else:
-            ct_psi = np.inf
+            ct_alpha = np.inf
             smooth_alpha = 0
         loss_alpha = loss
 
@@ -164,49 +165,48 @@ class SpikeTrainModel:
         time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        # GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # didnt change
+        # beta = np.exp(self.gamma)  # didnt change
+        # GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)  # didnt change
         diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute updated penalty
         psi_penalty = - tau_psi * np.sum(np.diag(psi_norm @ self.Omega_psi @ psi_norm.T))
 
-        # smooth_beta
-        # print('Optimizing beta')
+        # smooth_gamma
+        # print('Optimizing gamma')
         ct = 0
         learning_rate = 1
-        dlogL_dbeta = ((self.G_star @ self.I_beta_L).T @
+        dlogL_dgamma = beta * ((self.G_star @ self.I_beta_L).T @
                        (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
-                       self.I_beta_P - 2 * tau_beta * self.beta @ self.Omega_beta)
+                       self.I_beta_P - 2 * tau_beta * beta @ self.Omega_beta)
         while ct < max_iters:
-            beta_minus = self.beta + learning_rate * dlogL_dbeta
-            beta_plus = np.maximum(beta_minus, 0)
-            gen_grad_curr = (beta_plus - self.beta) / learning_rate
+            gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 
             # set up variables to compute loss
-            GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta_plus)
+            beta = np.exp(gamma_plus)
+            GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)
             diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
             # compute loss
             log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-            beta_penalty = - tau_beta * np.sum(np.diag(beta_plus @ self.Omega_beta @ beta_plus.T))
+            beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
             loss_next = log_likelihood + psi_penalty + beta_penalty + G_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
-            if (loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dbeta * gen_grad_curr) +
-                    alpha * learning_rate * 0.5 * np.linalg.norm(gen_grad_curr, ord='fro') ** 2):
+            if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro')**2:
                 break
-            learning_rate *= beta_factor
+            learning_rate *= gamma_factor
             ct += 1
 
         if ct < max_iters:
-            ct_beta = ct
-            smooth_beta = learning_rate
+            ct_gamma = ct
+            smooth_gamma = learning_rate
             loss = loss_next
-            self.beta = beta_plus
+            self.gamma = gamma_plus
         else:
-            ct_beta = np.inf
-            smooth_beta = 0
-        loss_beta = loss
+            ct_gamma = np.inf
+            smooth_gamma = 0
+        loss_gamma = loss
 
         # set up variables to compute loss in next round
         # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
@@ -215,11 +215,12 @@ class SpikeTrainModel:
         # time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        betaStar_BPsi = np.kron(np.eye(K), self.beta) @ B_psi  # now fixed
+        beta = np.exp(self.gamma)  # now fixed
+        betaStar_BPsi = np.kron(np.eye(K), beta) @ B_psi  # now fixed
         diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaStar_BPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute updated penalty
-        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
 
         # smooth_G
         # print('Optimizing G_star')
@@ -263,7 +264,8 @@ class SpikeTrainModel:
         # time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        # betaStar_BPsi = np.kron(np.eye(K), self.beta) @ B_psi  # now fixed
+        # beta = np.exp(self.gamma)  # now fixed
+        # betaStar_BPsi = np.kron(np.eye(K), beta) @ B_psi  # now fixed
         GStar_BetaStar_BPsi = self.G_star @ betaStar_BPsi  # now fixed
         diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar_BPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
@@ -305,13 +307,13 @@ class SpikeTrainModel:
             "dlogL_dalpha": dlogL_dalpha,
             "alpha_loss_increase": loss_alpha - loss_0,
             "smooth_alpha": smooth_alpha,
-            "iters_alpha": ct_psi,
-            "dlogL_dbeta": dlogL_dbeta,
-            "beta_loss_increase": loss_beta - loss_alpha,
-            "smooth_beta": smooth_beta,
-            "iters_beta": ct_beta,
+            "iters_alpha": ct_alpha,
+            "dlogL_dgamma": dlogL_dgamma,
+            "gamma_loss_increase": loss_gamma - loss_alpha,
+            "smooth_gamma": smooth_gamma,
+            "iters_gamma": ct_gamma,
             "dlogL_dG": dlogL_dG_star,
-            "G_loss_increase": loss_G - loss_beta,
+            "G_loss_increase": loss_G - loss_gamma,
             "smooth_G": smooth_G,
             "iters_G": ct_G,
             "dlogL_dd": dlogL_dd,
@@ -339,12 +341,13 @@ class SpikeTrainModel:
         time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
         # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0); tau_psi = 0
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
-        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), self.beta) @ B_psi
+        beta = np.exp(self.gamma)  # variable
+        diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), beta) @ B_psi
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
         psi_penalty = - tau_psi * np.sum(np.diag(psi_norm @ self.Omega_psi @ psi_norm.T))
-        beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
+        beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
         G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
 
@@ -372,7 +375,8 @@ class SpikeTrainModel:
         time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0); tau_psi = 0
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)
-        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
+        beta = np.exp(self.gamma)  # variable
+        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)  # variable
         diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + GStar_BetaStar @ B_psi
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
         # compute gradients
@@ -393,15 +397,15 @@ class SpikeTrainModel:
                                        self.J_psi) - 2 * tau_psi * psi_norm_1_exp_alpha *
                         np.reshape(np.diag(psi_norm_star @ self.Omega_psi @ U_star_minus_psi_star.T), (K, Q), order='F'))
 
-        dlogL_dbeta = ((self.G_star @ self.I_beta_L).T @
-                       (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
-                       self.I_beta_P - 2 * tau_beta * self.beta @ self.Omega_beta)
+        dlogL_dgamma = beta * ((self.G_star @ self.I_beta_L).T @
+                               (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
+                               self.I_beta_P - 2 * tau_beta * beta @ self.Omega_beta)
 
-        dlogL_dG_star = ((self.Y - lambda_del_t) @ (np.kron(np.eye(K), self.beta) @ B_psi).T) * self.mask_G
+        dlogL_dG_star = ((self.Y - lambda_del_t) @ (np.kron(np.eye(K), beta) @ B_psi).T) * self.mask_G
 
         dlogL_dd = np.sum(self.Y - lambda_del_t, axis=1)
 
-        return dlogL_dalpha, dlogL_dbeta, dlogL_dG_star, dlogL_dd
+        return dlogL_dalpha, dlogL_dgamma, dlogL_dG_star, dlogL_dd
 
     def compute_grad_chunk(self, params):
         variable, i_start, i_end, eps, tau_psi, tau_beta, tau_G, loss = params
@@ -411,8 +415,8 @@ class SpikeTrainModel:
 
         if variable.shape == self.alpha.shape:
             name = 'alpha'
-        elif variable.shape == self.beta.shape:
-            name = 'beta'
+        elif variable.shape == self.gamma.shape:
+            name = 'gamma'
         elif variable.shape == self.G_star.shape:
             name = 'G_star'
             J = variable.shape[1] // variable.shape[0]
@@ -437,10 +441,10 @@ class SpikeTrainModel:
 
     def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta, tau_G):
 
-        eps = 1e-5
+        eps = 1e-3
         # define parameters
         K = self.Y.shape[0]
-        L = self.beta.shape[0]
+        L = self.gamma.shape[0]
 
         loss_result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
         loss = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
@@ -457,9 +461,9 @@ class SpikeTrainModel:
             params.append((self.alpha, k_start, k_end, eps, tau_psi, tau_beta, tau_G, loss))
 
         results = pool.map(self.compute_grad_chunk, params)
-        psi_grad = np.concatenate([r for r in results])
+        alpha_grad = np.concatenate([r for r in results])
 
-        # beta gradient
+        # gamma gradient
         chunk_size = L // mp.cpu_count()
         if chunk_size == 0:
             chunk_size = L
@@ -467,10 +471,10 @@ class SpikeTrainModel:
         for l in range(0, L, chunk_size):
             l_start = l
             l_end = min(l + chunk_size, L)
-            params.append((self.beta, l_start, l_end, eps, tau_psi, tau_beta, tau_G, loss))
+            params.append((self.gamma, l_start, l_end, eps, tau_psi, tau_beta, tau_G, loss))
 
         results = pool.map(self.compute_grad_chunk, params)
-        beta_grad = np.concatenate([r for r in results])
+        gamma_grad = np.concatenate([r for r in results])
 
         # g_star gradient
         chunk_size = K // mp.cpu_count()
@@ -498,4 +502,4 @@ class SpikeTrainModel:
             d_grad[k] = (loss_eps - loss) / eps
             self.d[k] = orig
 
-        return psi_grad, beta_grad, G_star_grad, d_grad
+        return alpha_grad, gamma_grad, G_star_grad, d_grad

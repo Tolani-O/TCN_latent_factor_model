@@ -19,11 +19,11 @@ degree = 3
 L = self.latent_factors.shape[0] - 1
 
 # Training parameters
-num_epochs = 5000
+num_epochs = 2500
 
 # Training hyperparameters
 tau_psi = 80
-tau_beta = 100
+tau_beta = 80
 tau_G = 2
 
 model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
@@ -31,17 +31,17 @@ model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 losses = []
 
 alpha_loss_increase = []
-d_loss_increase = []
+gamma_loss_increase = []
 G_loss_increase = []
-beta_loss_increase = []
+d_loss_increase = []
 
 alpha_learning_rate = []
-beta_learning_rate = []
+gamma_learning_rate = []
 G_learning_rate = []
 d_learning_rate = []
 
 alpha_iters = []
-beta_iters = []
+gamma_iters = []
 G_iters = []
 d_iters = []
 
@@ -56,24 +56,24 @@ for epoch in range(num_epochs):
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
     dalpha = result["dlogL_dalpha"]
-    dbeta = result["dlogL_dbeta"]
+    dgamma = result["dlogL_dgamma"]
     dG_star = result["dlogL_dG"]
     dd = result["dlogL_dd"]
 
     losses.append(loss)
 
     alpha_loss_increase.append(result["alpha_loss_increase"])
-    beta_loss_increase.append(result["beta_loss_increase"])
+    gamma_loss_increase.append(result["gamma_loss_increase"])
     G_loss_increase.append(result["G_loss_increase"])
     d_loss_increase.append(result["d_loss_increase"])
 
     alpha_learning_rate.append(result["smooth_alpha"])
-    beta_learning_rate.append(result["smooth_beta"])
+    gamma_learning_rate.append(result["smooth_gamma"])
     G_learning_rate.append(result["smooth_G"])
     d_learning_rate.append(result["smooth_d"])
 
     alpha_iters.append(result["iters_alpha"])
-    beta_iters.append(result["iters_beta"])
+    gamma_iters.append(result["iters_gamma"])
     G_iters.append(result["iters_G"])
     d_iters.append(result["iters_d"])
 
@@ -89,11 +89,11 @@ for epoch in range(num_epochs):
 num_epochs = len(losses)
 losses = np.array(losses)
 alpha_learning_rate = np.array(alpha_learning_rate)
-beta_learning_rate = np.array(beta_learning_rate)
+gamma_learning_rate = np.array(gamma_learning_rate)
 G_learning_rate = np.array(G_learning_rate)
 d_learning_rate = np.array(d_learning_rate)
 alpha_iters = np.array(alpha_iters)
-beta_iters = np.array(beta_iters)
+gamma_iters = np.array(gamma_iters)
 G_iters = np.array(G_iters)
 d_iters = np.array(d_iters)
 plt.plot(np.arange(0, num_epochs), losses[0:])
@@ -102,7 +102,7 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), alpha_learning_rate)
 plt.title('Alpha Learning Rates')
 plt.show()
-plt.plot(np.arange(0, num_epochs), beta_learning_rate)
+plt.plot(np.arange(0, num_epochs), gamma_learning_rate)
 plt.title('Beta Learning Rates')
 plt.show()
 plt.plot(np.arange(0, num_epochs), G_learning_rate)
@@ -114,7 +114,7 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), alpha_iters)
 plt.title('Alpha Iters')
 plt.show()
-plt.plot(np.arange(0, num_epochs), beta_iters)
+plt.plot(np.arange(0, num_epochs), gamma_iters)
 plt.title('Beta Iters')
 plt.show()
 plt.plot(np.arange(0, num_epochs), G_iters)
@@ -129,7 +129,8 @@ psi = exp_alpha_c @ model.U_psi
 psi_norm = (1 / (psi[:, (model.V.shape[0]-1), np.newaxis])) * psi
 time_matrix = max(model.time) * psi_norm @ model.V
 B_psi = generate_bspline_matrix(model.B_func_n, time_matrix)
-lambda_manual = compute_lambda(B_psi, model.d, model.G_star, model.beta)
+beta = np.exp(model.gamma)
+lambda_manual = compute_lambda(B_psi, model.d, model.G_star, beta)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
 plt.plot(stim_time, avg_lambda_manual)
 plt.show()
@@ -138,7 +139,7 @@ for i in range(model.Y.shape[0]):
     plt.plot(stim_time, lambda_manual[i, :] + i * 2)
 plt.show()
 
-latent_factors_manual = model.beta @ model.V
+latent_factors_manual = beta @ model.V
 for i in range(L):
     # plt.plot(np.concatenate([[stim_time[0] - 0.02, stim_time[0] - 0.01], stim_time]), model.beta[i, :])
     plt.plot(stim_time, latent_factors_manual[i, :])
