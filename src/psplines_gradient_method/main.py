@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import time
 
 self = DataAnalyzer().initialize()
-binned, time = self.sample_data()
+binned, stim_time = self.sample_data()
 binned_spikes = np.where(binned >= 1)
 # plot_spikes(binned_spikes)
 intensity, latent_factors = self.intensity, self.latent_factors
@@ -19,14 +19,14 @@ degree = 3
 L = self.latent_factors.shape[0] - 1
 
 # Training parameters
-num_epochs = 2500
+num_epochs = 5000
 
 # Training hyperparameters
 tau_psi = 80
-tau_beta = 80
+tau_beta = 100
 tau_G = 2
 
-model = SpikeTrainModel(Y, time).initialize_for_time_warping(L, degree)
+model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 losses = []
 
@@ -83,7 +83,7 @@ for epoch in range(num_epochs):
     total_time += elapsed_time  # Calculate the total time for training
 
     if epoch % 100 == 0:
-        print(f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time:.2f} s, Total Time: {total_time:.2f} s")
+        print(f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time/60:.2f} mins, Total Time: {total_time/(60*60):.2f} hrs")
         epoch_time = 0  # Reset the epoch time
 
 num_epochs = len(losses)
@@ -108,7 +108,7 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), G_learning_rate)
 plt.title('G Learning Rates')
 plt.show()
-plt.plot(np.arange(1, num_epochs), d_learning_rate)
+plt.plot(np.arange(0, num_epochs), d_learning_rate)
 plt.title('d Learning Rates')
 plt.show()
 plt.plot(np.arange(0, num_epochs), alpha_iters)
@@ -124,27 +124,29 @@ plt.plot(np.arange(0, num_epochs), d_iters)
 plt.title('d Iters')
 plt.show()
 
-time_matrix = model.psi @ model.V
+exp_alpha_c = (np.exp(model.alpha) @ model.alpha_prime_multiply) + model.alpha_prime_add
+psi = exp_alpha_c @ model.U_psi
+psi_norm = (1 / (psi[:, (model.V.shape[0]-1), np.newaxis])) * psi
+time_matrix = max(model.time) * psi_norm @ model.V
 B_psi = generate_bspline_matrix(model.B_func_n, time_matrix)
 lambda_manual = compute_lambda(B_psi, model.d, model.G_star, model.beta)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
-plt.plot(time, avg_lambda_manual)
+plt.plot(stim_time, avg_lambda_manual)
 plt.show()
 np.mean(np.square(intensity - lambda_manual))
 for i in range(model.Y.shape[0]):
-    plt.plot(time, lambda_manual[9, :] + i * 2)
+    plt.plot(stim_time, lambda_manual[i, :] + i * 2)
 plt.show()
 
 latent_factors_manual = model.beta @ model.V
 for i in range(L):
-    # plt.plot(np.concatenate([[time[0] - dt], time]), beta[i, :])
-    plt.plot(time, latent_factors_manual[i, :])
+    # plt.plot(np.concatenate([[stim_time[0] - 0.02, stim_time[0] - 0.01], stim_time]), model.beta[i, :])
+    plt.plot(stim_time, latent_factors_manual[i, :])
     plt.title(f'Factor [{i}, :]')
 plt.show()
 
-time_warping_matrix = model.psi @ model.V
 for i in range(model.Y.shape[0]):
-    plt.plot(time, time_warping_matrix[8, :]+ i * 0.01)
+    plt.plot(stim_time, time_matrix[i, :] + i * 0.01)
 plt.show()
 
 G_and_d = np.concatenate([G, d[:, np.newaxis]], axis=1)

@@ -91,7 +91,7 @@ class SpikeTrainModel:
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add
         psi = exp_alpha_c @ self.U_psi  # variable
         psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # variable, called \psi' in the document
-        time_matrix = psi_norm @ self.V  # variable
+        time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
         diagdJ = self.d[:, np.newaxis] * self.J  # variable
         GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
@@ -120,7 +120,7 @@ class SpikeTrainModel:
         psi_norm_1_exp_alpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c
         U_star_minus_psi_star = U_psi_star - psi_norm_star
         # psi gradient
-        dlogL_dalpha = (self.degree * (((GStar_BetaStar @
+        dlogL_dalpha = (self.degree * max(self.time) * (((GStar_BetaStar @
                     ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
                     (psi_norm_1_exp_alpha.T.flatten()[:, np.newaxis] * (U_star_minus_psi_star @ self.V) * y_minus_lambdadt_star).T) * self.mask_psi) @
                                     self.J_psi) - 2 * tau_psi * psi_norm_1_exp_alpha *
@@ -132,7 +132,7 @@ class SpikeTrainModel:
             exp_alpha_c = (np.exp(alpha_plus) @ self.alpha_prime_multiply) + self.alpha_prime_add
             psi = exp_alpha_c @ self.U_psi  # variable
             psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # variable, called \psi' in the document
-            time_matrix = psi_norm @ self.V  # variable
+            time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
             B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)
             diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
@@ -161,7 +161,7 @@ class SpikeTrainModel:
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
         psi = exp_alpha_c @ self.U_psi  # now fixed
         psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # now fixed, called \psi' in the document
-        time_matrix = psi_norm @ self.V  # now fixed
+        time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
         # GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # didnt change
@@ -212,7 +212,7 @@ class SpikeTrainModel:
         # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
         # psi = exp_alpha_c @ self.U_psi  # now fixed
         # psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # now fixed, called \psi' in the document
-        # time_matrix = psi_norm @ self.V  # now fixed
+        # time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
         betaStar_BPsi = np.kron(np.eye(K), self.beta) @ B_psi  # now fixed
@@ -260,7 +260,7 @@ class SpikeTrainModel:
         # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
         # psi = exp_alpha_c @ self.U_psi  # now fixed
         # psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # now fixed, called \psi' in the document
-        # time_matrix = psi_norm @ self.V  # now fixed
+        # time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
         # betaStar_BPsi = np.kron(np.eye(K), self.beta) @ B_psi  # now fixed
@@ -336,7 +336,7 @@ class SpikeTrainModel:
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add
         psi = exp_alpha_c @ self.U_psi  # variable
         psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # variable, called \psi' in the document
-        time_matrix = psi_norm @ self.V  # variable
+        time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
         # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0); tau_psi = 0
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
         diagdJ_plus_GBetaB = self.d[:, np.newaxis] * self.J + self.G_star @ np.kron(np.eye(K), self.beta) @ B_psi
@@ -369,7 +369,7 @@ class SpikeTrainModel:
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
         psi = exp_alpha_c @ self.U_psi  # now fixed
         psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # now fixed, called \psi' in the document
-        time_matrix = psi_norm @ self.V  # now fixed
+        time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         # time_matrix = np.repeat(self.time[np.newaxis, :], K, axis=0); tau_psi = 0
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)
         GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
@@ -387,7 +387,7 @@ class SpikeTrainModel:
         psi_norm_1_exp_alpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c
         U_star_minus_psi_star = U_psi_star - psi_norm_star
         # gradients
-        dlogL_dalpha = (self.degree * (((GStar_BetaStar @
+        dlogL_dalpha = (self.degree * max(self.time) * (((GStar_BetaStar @
                                 ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
                                 (psi_norm_1_exp_alpha.T.flatten()[:, np.newaxis] * (U_star_minus_psi_star @ self.V) * y_minus_lambdadt_star).T) * self.mask_psi) @
                                        self.J_psi) - 2 * tau_psi * psi_norm_1_exp_alpha *
