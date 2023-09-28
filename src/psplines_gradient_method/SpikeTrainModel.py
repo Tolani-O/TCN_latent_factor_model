@@ -120,7 +120,7 @@ class SpikeTrainModel:
         psi_norm_star = np.vstack([psi_norm] * Q)
         psi_norm_1_exp_alpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c
         U_star_minus_psi_star = U_psi_star - psi_norm_star
-        # psi gradient
+        # alpha gradient
         dlogL_dalpha = (self.degree * max(self.time) * (((GStar_BetaStar @
                     ((np.vstack([self.knots_1] * K) * B_psi_nminus1_1) - (np.vstack([self.knots_2] * K) * B_psi_nminus1_2)) @
                     (psi_norm_1_exp_alpha.T.flatten()[:, np.newaxis] * (U_star_minus_psi_star @ self.V) * y_minus_lambdadt_star).T) * self.mask_psi) @
@@ -441,7 +441,7 @@ class SpikeTrainModel:
 
     def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta, tau_G):
 
-        eps = 1e-3
+        eps = 1e-4
         # define parameters
         K = self.Y.shape[0]
         L = self.gamma.shape[0]
