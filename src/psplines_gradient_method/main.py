@@ -20,7 +20,7 @@ L = self.latent_factors.shape[0] - 1
 model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 # Training parameters
-num_epochs = 2500
+num_epochs = 5000
 
 # Training hyperparameters
 tau_psi = 80

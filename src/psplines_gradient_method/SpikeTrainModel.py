@@ -106,6 +106,56 @@ class SpikeTrainModel:
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
         loss_0 = loss
 
+        # smooth_gamma
+        # print('Optimizing gamma')
+        ct = 0
+        learning_rate = 1
+        dlogL_dgamma = beta * ((self.G_star @ self.I_beta_L).T @
+                               (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
+                               self.I_beta_P - 2 * tau_beta * beta @ self.Omega_beta)
+        while ct < max_iters:
+            gamma_plus = self.gamma + learning_rate * dlogL_dgamma
+
+            # set up variables to compute loss
+            beta = np.exp(gamma_plus)
+            GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)
+            diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi
+            lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
+            # compute loss
+            log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
+            beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
+            loss_next = log_likelihood + psi_penalty + beta_penalty + G_penalty
+
+            # Armijo condition, using Frobenius norm for matrices, but for maximization
+            if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro') ** 2:
+                break
+            learning_rate *= gamma_factor
+            ct += 1
+
+        if ct < max_iters:
+            ct_gamma = ct
+            smooth_gamma = learning_rate
+            loss = loss_next
+            self.gamma = gamma_plus
+        else:
+            ct_gamma = np.inf
+            smooth_gamma = 0
+        loss_gamma = loss
+
+        # set up variables to compute loss in next round
+        # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # didnt change
+        # psi = exp_alpha_c @ self.U_psi  # didnt change
+        # psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # didnt change, called \psi' in the document
+        # time_matrix = max(self.time) * (psi_norm @ self.V)  # didnt change
+        # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # didnt change
+        # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
+        beta = np.exp(self.gamma)  # now fixed
+        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)  # now fixed
+        diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi  # now fixed
+        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
+        # compute updated penalty
+        beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
+
         # smooth_alpha
         # print('Optimizing alpha')
         ct = 0
@@ -161,66 +211,16 @@ class SpikeTrainModel:
         # set up variables to compute loss in next round
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
         psi = exp_alpha_c @ self.U_psi  # now fixed
-        psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # now fixed, called \psi' in the document
+        psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # now fixed, called \psi' in the document
         time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        # beta = np.exp(self.gamma)  # didnt change
-        # GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)  # didnt change
-        diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi  # variable
-        lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
-        # compute updated penalty
-        psi_penalty = - tau_psi * np.sum(np.diag(psi_norm @ self.Omega_psi @ psi_norm.T))
-
-        # smooth_gamma
-        # print('Optimizing gamma')
-        ct = 0
-        learning_rate = 1
-        dlogL_dgamma = beta * ((self.G_star @ self.I_beta_L).T @
-                       (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
-                       self.I_beta_P - 2 * tau_beta * beta @ self.Omega_beta)
-        while ct < max_iters:
-            gamma_plus = self.gamma + learning_rate * dlogL_dgamma
-
-            # set up variables to compute loss
-            beta = np.exp(gamma_plus)
-            GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta)
-            diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi
-            lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
-            # compute loss
-            log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
-            beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
-            loss_next = log_likelihood + psi_penalty + beta_penalty + G_penalty
-
-            # Armijo condition, using Frobenius norm for matrices, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro')**2:
-                break
-            learning_rate *= gamma_factor
-            ct += 1
-
-        if ct < max_iters:
-            ct_gamma = ct
-            smooth_gamma = learning_rate
-            loss = loss_next
-            self.gamma = gamma_plus
-        else:
-            ct_gamma = np.inf
-            smooth_gamma = 0
-        loss_gamma = loss
-
-        # set up variables to compute loss in next round
-        # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + self.alpha_prime_add  # now fixed
-        # psi = exp_alpha_c @ self.U_psi  # now fixed
-        # psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # now fixed, called \psi' in the document
-        # time_matrix = max(self.time) * (psi_norm @ self.V)  # now fixed
-        # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
-        # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
-        beta = np.exp(self.gamma)  # now fixed
+        # beta = np.exp(self.gamma)  # now fixed
         betaStar_BPsi = np.kron(np.eye(K), beta) @ B_psi  # now fixed
         diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaStar_BPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute updated penalty
-        beta_penalty = - tau_beta * np.sum(np.diag(beta @ self.Omega_beta @ beta.T))
+        psi_penalty = - tau_psi * np.sum(np.diag(psi_norm @ self.Omega_psi @ psi_norm.T))
 
         # smooth_G
         # print('Optimizing G_star')
@@ -265,7 +265,6 @@ class SpikeTrainModel:
         # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # now fixed
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
         # beta = np.exp(self.gamma)  # now fixed
-        # betaStar_BPsi = np.kron(np.eye(K), beta) @ B_psi  # now fixed
         GStar_BetaStar_BPsi = self.G_star @ betaStar_BPsi  # now fixed
         diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar_BPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
@@ -305,15 +304,15 @@ class SpikeTrainModel:
 
         result = {
             "dlogL_dalpha": dlogL_dalpha,
-            "alpha_loss_increase": loss_alpha - loss_0,
+            "alpha_loss_increase": loss_alpha - loss_gamma,
             "smooth_alpha": smooth_alpha,
             "iters_alpha": ct_alpha,
             "dlogL_dgamma": dlogL_dgamma,
-            "gamma_loss_increase": loss_gamma - loss_alpha,
+            "gamma_loss_increase": loss_gamma - loss_0,
             "smooth_gamma": smooth_gamma,
             "iters_gamma": ct_gamma,
             "dlogL_dG": dlogL_dG_star,
-            "G_loss_increase": loss_G - loss_gamma,
+            "G_loss_increase": loss_G - loss_alpha,
             "smooth_G": smooth_G,
             "iters_G": ct_G,
             "dlogL_dd": dlogL_dd,
