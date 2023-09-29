@@ -11,7 +11,7 @@ def generate_bspline_functions(time, degree, deriv=False):
     for i in range(len(knots)):
         b = BSpline.basis_element(knots[i:(i + k + 2)], False)
         B.append(b)
-    remove_indxs = [201, 202, 203, 205]
+    remove_indxs = [202, 203, 204, 205]
     return [x for i, x in enumerate(B) if i not in remove_indxs]
 
 
@@ -19,9 +19,11 @@ def generate_bspline_matrix(bspline_functions, time_matrix):
     K, T = time_matrix.shape
     P = len(bspline_functions)
     B = np.empty((K * P, T))
-    for k, bspline_func in enumerate(bspline_functions):
-        B[k::P] = bspline_func(time_matrix)
-    return np.nan_to_num(B)
+    for p, bspline_func in enumerate(bspline_functions):
+        B[p::P] = bspline_func(time_matrix)
+    B = np.nan_to_num(B)
+    B[(P-1)::P, -1] = 1
+    return B
 
 
 def bspline_deriv_multipliers(time, degree):

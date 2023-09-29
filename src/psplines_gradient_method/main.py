@@ -17,6 +17,7 @@ intensity, latent_factors = self.intensity, self.latent_factors
 Y = binned  # K x T
 degree = 3
 L = self.latent_factors.shape[0] - 1
+model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 # Training parameters
 num_epochs = 5000
@@ -26,14 +27,12 @@ tau_psi = 80
 tau_beta = 100
 tau_G = 2
 
-model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
-
 losses = []
 
 alpha_loss_increase = []
-d_loss_increase = []
-G_loss_increase = []
 beta_loss_increase = []
+G_loss_increase = []
+d_loss_increase = []
 
 alpha_learning_rate = []
 beta_learning_rate = []
