@@ -1,6 +1,7 @@
 import numpy as np
 import multiprocessing as mp
-from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_masking_matrix
+from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_masking_matrix, \
+    reshape_bpsi_for_sparse_multiplication, reshape_beta_for_sparse_multiplication
 from src.psplines_gradient_method.generate_bsplines import generate_bspline_functions, generate_bspline_matrix, \
     bspline_deriv_multipliers
 
@@ -8,7 +9,7 @@ from src.psplines_gradient_method.generate_bsplines import generate_bspline_func
 class SpikeTrainModel:
     def __init__(self, Y, time):
         # variables
-        self.G_star = None
+        self.G = None
         self.beta = None
         self.d = None
         self.alpha = None
@@ -47,7 +48,7 @@ class SpikeTrainModel:
         K = self.Y.shape[0]
         P = len(self.B_func_n)
         Q = self.V.shape[0]  # will be equal to P now
-        self.mask_G = create_masking_matrix(K, L)
+        self.mask_G = create_masking_matrix(K, L) # might not be used anywhere
         self.mask_beta = create_masking_matrix(K, P)
         self.I_beta_P = np.vstack([np.eye(P)] * K)
         self.I_beta_L = np.vstack([np.eye(L)] * K)
@@ -67,7 +68,7 @@ class SpikeTrainModel:
 
         # variables
         np.random.seed(0)
-        self.G_star = np.random.rand(K, K * L) * self.mask_G
+        self.G = np.random.rand(K, L)
         np.random.seed(0)
         self.beta = np.maximum(np.random.rand(L, P), 0)
         np.random.seed(0)
@@ -83,7 +84,7 @@ class SpikeTrainModel:
                                                                alpha=0.3, max_iters=4):
         # define parameters
         dt = round(self.time[1] - self.time[0], 3)
-        K = self.Y.shape[0]
+        K, T = self.Y.shape
         P = len(self.B_func_n)
         Q = self.V.shape[0]
 
@@ -93,15 +94,19 @@ class SpikeTrainModel:
         psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # variable, called \psi' in the document
         time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
         B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # variable
+        B_psi_star, template = reshape_bpsi_for_sparse_multiplication(B_psi, K)
+        beta_star = reshape_beta_for_sparse_multiplication(self.beta, template, B_psi_star.shape[0])
+        betaStar_Bpsi = np.sum(beta_star * B_psi_star[None, :, :], axis=1)  # variable
+        betaStar_Bpsi = np.stack([betaStar_Bpsi[:, t:t + T] for t in range(0, K * T, T)], axis=0)
+        GStar_BetaStar_Bpsi = np.einsum('ij,ijk->ik', self.G, betaStar_Bpsi)
         diagdJ = self.d[:, np.newaxis] * self.J  # variable
-        GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
-        diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi  # variable
+        diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar_Bpsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt  # variable
         # compute loss
         log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
         psi_penalty = - tau_psi * np.sum(np.diag(psi_norm @ self.Omega_psi @ psi_norm.T))
         beta_penalty = - tau_beta * np.sum(np.diag(self.beta @ self.Omega_beta @ self.beta.T))
-        G_penalty = - tau_G * np.linalg.norm(self.G_star, ord=1)
+        G_penalty = - tau_G * np.linalg.norm(self.G, ord=1)
         loss = log_likelihood + psi_penalty + beta_penalty + G_penalty
         loss_0 = loss
 
@@ -109,7 +114,7 @@ class SpikeTrainModel:
         # print('Optimizing beta')
         ct = 0
         learning_rate = 1
-        dlogL_dbeta = ((self.G_star @ self.I_beta_L).T @
+        dlogL_dbeta = (self.G.T @
                        (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
                        self.I_beta_P - 2 * tau_beta * self.beta @ self.Omega_beta)
         while ct < max_iters:
@@ -118,8 +123,10 @@ class SpikeTrainModel:
             gen_grad_curr = (beta_plus - self.beta) / learning_rate
 
             # set up variables to compute loss
-            GStar_BetaStar = self.G_star @ np.kron(np.eye(K), beta_plus)
-            diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi
+            beta_star = reshape_beta_for_sparse_multiplication(beta_plus, template, B_psi_star.shape[0])
+            betaStar_Bpsi = np.sum(beta_star * B_psi_star[None, :, :], axis=1)  # variable
+            betaStar_Bpsi = np.concatenate([betaStar_Bpsi[:, t:t + T] for t in range(0, K * T, T)], axis=0)
+            diagdJ_plus_GBetaB = diagdJ + self.G_star @ betaStar_Bpsi
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * dt
             # compute loss
             log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
@@ -149,6 +156,10 @@ class SpikeTrainModel:
         # psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # didnt change, called \psi' in the document
         # time_matrix = max(self.time) * (psi_norm @ self.V)  #didnt change
         # B_psi = generate_bspline_matrix(self.B_func_n, time_matrix)  # didnt change
+        # B_psi_star, template = reshape_bpsi_for_sparse_multiplication(B_psi, K)  # didnt change
+        beta_star = reshape_beta_for_sparse_multiplication(self.beta, template, B_psi_star.shape[0])
+        betaStar_Bpsi = np.sum(beta_star * B_psi_star[None, :, :], axis=1)  # variable
+        betaStar_Bpsi = np.concatenate([betaStar_Bpsi[:, t:t + T] for t in range(0, K * T, T)], axis=0)
         # diagdJ = self.d[:, np.newaxis] * self.J  # didnt change
         GStar_BetaStar = self.G_star @ np.kron(np.eye(K), self.beta)  # variable
         diagdJ_plus_GBetaB = diagdJ + GStar_BetaStar @ B_psi  # variable
