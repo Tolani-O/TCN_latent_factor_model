@@ -199,12 +199,12 @@ class SpikeTrainModel:
             ct += 1
 
         if ct < max_iters:
-            ct_psi = ct
+            ct_alpha = ct
             smooth_alpha = learning_rate
             loss = loss_next
             self.alpha = alpha_plus
         else:
-            ct_psi = np.inf
+            ct_alpha = np.inf
             smooth_alpha = 0
         loss_alpha = loss
 
@@ -305,7 +305,7 @@ class SpikeTrainModel:
             "dlogL_dalpha": dlogL_dalpha,
             "alpha_loss_increase": loss_alpha - loss_beta,
             "smooth_alpha": smooth_alpha,
-            "iters_alpha": ct_psi,
+            "iters_alpha": ct_alpha,
             "dlogL_dbeta": dlogL_dbeta,
             "beta_loss_increase": loss_beta - loss_0,
             "smooth_beta": smooth_beta,
@@ -457,7 +457,7 @@ class SpikeTrainModel:
             params.append((self.alpha, k_start, k_end, eps, tau_psi, tau_beta, tau_G, loss))
 
         results = pool.map(self.compute_grad_chunk, params)
-        psi_grad = np.concatenate([r for r in results])
+        alpha_grad = np.concatenate([r for r in results])
 
         # beta gradient
         chunk_size = L // mp.cpu_count()
@@ -498,4 +498,4 @@ class SpikeTrainModel:
             d_grad[k] = (loss_eps - loss) / eps
             self.d[k] = orig
 
-        return psi_grad, beta_grad, G_star_grad, d_grad
+        return alpha_grad, beta_grad, G_star_grad, d_grad
