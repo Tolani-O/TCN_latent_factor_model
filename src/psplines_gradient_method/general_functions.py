@@ -44,16 +44,27 @@ def create_masking_matrix(N, M):
 
 def reshape_beta_for_sparse_multiplication(beta, format, width):
     L, P = beta.shape
-    if width + sorted(set(format))[-2] > P:
-        raise ValueError("width + max(format) must be less than or equal to the number of columns in beta")
     # Create an array of column indices for beta using broadcasting and modulo operation
     col_indices = (np.arange(width) + format[:, None]) % P
     # Use advanced indexing to fill beta_star
     beta_star = beta[:, col_indices]
-    # Find the rows where col_indices[i, 0] == 201 and set beta_star[i, 1:] to 0
-    mask = col_indices[:, 0] == P-1
-    beta_star[:, mask, 1:] = 0
     return np.transpose(beta_star, (0, 2, 1))
+
+
+def reshape_ylambda_for_sparse_multiplication(ylambda, formats, width):
+    L, P = ylambda.shape
+    # Initialize a list to hold the 3D arrays created for each row of formats
+    ylambda_star_subs = []
+    # Loop over each row of formats and apply the existing logic
+    for i, format in enumerate(formats):
+        # Create an array of column indices for beta using broadcasting and modulo operation
+        col_indices = (np.arange(width) + format[:, None]) % P
+        # Use advanced indexing to fill beta_star
+        ylambda_star = ylambda[i, col_indices]
+        # Append the transposed beta_star to the list
+        ylambda_star_subs.append(ylambda_star.T)
+    # Stack the list of 3D arrays along a new axis to create the final 3D array
+    return np.stack(ylambda_star_subs)
 
 
 def reshape_bpsi_for_sparse_multiplication(b_psi, K):
@@ -96,6 +107,62 @@ def reshape_bpsi_for_sparse_multiplication(b_psi, K):
     # Concatenate the list of first non-zero row vectors horizontally
     concatenated_first_non_zero_rows = np.concatenate(first_non_zero_rows)
     return concatenated_aligned_mat, concatenated_first_non_zero_rows
+
+
+def reshape_bpsiTranspose_for_sparse_multiplication(b_psi, K):
+    KP, T = b_psi.shape
+    P = KP // K
+    B_split = [b_psi[i * P: (i + 1) * P, :] for i in range(K)]
+    # Create a list to store the aligned matrices corresponding to each element in B_split
+    aligned_mats = []
+    # Create a list to store the column number of the first non-zero entry for each b_split
+    first_non_zero_cols = []
+    max_cols = 0  # To store the maximum number of columns among all aligned_mat
+
+    for b_split in B_split:
+        # Create a new matrix to store the aligned matrix for the current b_split
+        aligned_mat = np.zeros((P, T), dtype=b_psi.dtype)
+        # Create a vector to store the column number of the first non-zero entry for the current b_split
+        first_non_zero_vector = np.full(P, -1, dtype=int)  # Initialize with -1 to represent rows with all zeros
+        for p in range(P):
+            # Find the indices of non-zero elements in the row
+            non_zero_indices = np.nonzero(b_split[p, :])[0]
+            if non_zero_indices.size > 0:
+                # Find the index of the first non-zero element in the row
+                first_non_zero_index = non_zero_indices[0]
+                # Store the column number of the first non-zero entry in the vector
+                first_non_zero_vector[p] = first_non_zero_index
+                # Shift the elements in the row to the left
+                aligned_mat[p, :T - first_non_zero_index] = b_split[p, first_non_zero_index:]
+        # Append the vector to the list
+        first_non_zero_cols.append(first_non_zero_vector)
+        # Find the index of the last column that contains a non-zero element
+        last_non_zero_col = T - 1
+        for t in range(T - 1, -1, -1):
+            if np.any(aligned_mat[:, t]):
+                last_non_zero_col = t
+                break
+        # Remove the rightmost columns that contain all zeros
+        aligned_mat = aligned_mat[:, :last_non_zero_col + 1]
+        # Append the aligned matrix for the current b_split to the list
+        aligned_mats.append(aligned_mat)
+
+        # Update max_cols
+        if aligned_mat.shape[1] > max_cols:
+            max_cols = aligned_mat.shape[1]
+
+    # Pad the matrices with zeros to make them have the same number of columns
+    for i in range(len(aligned_mats)):
+        num_cols_to_pad = max_cols - aligned_mats[i].shape[1]
+        if num_cols_to_pad > 0:
+            padding = np.zeros((P, num_cols_to_pad), dtype=b_psi.dtype)
+            aligned_mats[i] = np.hstack((aligned_mats[i], padding))
+
+    # Now concatenate the padded matrices vertically
+    concatenated_aligned_mat = np.concatenate(aligned_mats, axis=0)
+    # Concatenate the list of first non-zero column vectors vertically
+    concatenated_first_non_zero_cols = np.concatenate(first_non_zero_cols)
+    return concatenated_aligned_mat.T, concatenated_first_non_zero_cols
 
 
 def compute_lambda(B_psi, d, G_star, beta):

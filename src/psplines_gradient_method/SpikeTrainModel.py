@@ -1,7 +1,8 @@
 import numpy as np
 import multiprocessing as mp
 from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_masking_matrix, \
-    reshape_bpsi_for_sparse_multiplication, reshape_beta_for_sparse_multiplication
+    reshape_bpsi_for_sparse_multiplication, reshape_beta_for_sparse_multiplication, \
+    reshape_bpsiTranspose_for_sparse_multiplication, reshape_ylambda_for_sparse_multiplication
 from src.psplines_gradient_method.generate_bsplines import generate_bspline_functions, generate_bspline_matrix, \
     bspline_deriv_multipliers
 
@@ -114,7 +115,15 @@ class SpikeTrainModel:
         # print('Optimizing beta')
         ct = 0
         learning_rate = 1
-        dlogL_dbeta = (self.G.T @
+        B_psi_transpose_star, template = reshape_bpsiTranspose_for_sparse_multiplication(B_psi, K)
+        B_psi_transpose_star = np.stack([B_psi_transpose_star[:, k:k + P] for k in range(0, K * P, P)], axis=0)
+        template = np.stack([template[k:k + P] for k in range(0, K * P, P)])
+        y_minus_lambda_del_t_star = reshape_ylambda_for_sparse_multiplication(self.Y - lambda_del_t, template, B_psi_transpose_star.shape[1])
+        y_minus_lambda_del_t_B_psi_transpose = np.sum(y_minus_lambda_del_t_star * B_psi_transpose_star, axis=1)  # variable
+        dlogL_dbeta = self.G.T @ y_minus_lambda_del_t_B_psi_transpose - 2 * tau_beta * self.beta @ self.Omega_beta
+
+
+        dlogL_dbeta2 = (self.G.T @
                        (((self.Y - lambda_del_t) @ B_psi.T) * self.mask_beta) @
                        self.I_beta_P - 2 * tau_beta * self.beta @ self.Omega_beta)
         while ct < max_iters:
