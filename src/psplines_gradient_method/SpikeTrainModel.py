@@ -406,11 +406,11 @@ class SpikeTrainModel:
 
         return dlogL_dalpha, dlogL_dgamma, dlogL_dG_star, dlogL_dd
 
-    def compute_grad_chunk(self, params):
-        variable, i_start, i_end, eps, tau_psi, tau_beta, tau_G, loss = params
+    def compute_grad_chunk(self, variable, i, eps, tau_psi, tau_beta, tau_G, loss):
+
         J = variable.shape[1]
         J2 = 0
-        grad_chunk = np.zeros((i_end - i_start, J))
+        grad_chunk = np.zeros(J)
 
         if variable.shape == self.alpha.shape:
             name = 'alpha'
@@ -420,21 +420,26 @@ class SpikeTrainModel:
             name = 'G_star'
             J = variable.shape[1] // variable.shape[0]
             J2 = J
+        elif variable.shape == self.d[np.newaxis, :].shape:
+            name = 'd'
         else:
             raise ValueError('Variable not recognized')
 
-        print(f'Starting {name} gradient chunk. i_start: {i_start}, i_end: {i_end}')
+        print(f'Starting {name} gradient chunk at row: {i}')
 
-        for i in range(i_start, i_end):
-            for j in (np.arange(J) + (i * J2)):
-                orig = variable[i, j]
-                variable[i, j] = orig + eps
-                loss_result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
-                loss_eps = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
-                grad_chunk[i - i_start, j] = (loss_eps - loss) / eps
-                variable[i, j] = orig
+        for j in (np.arange(J) + (i * J2)):
+            orig = variable[i, j]
+            variable[i, j] = orig + eps
+            if name == 'd':
+                self.d[j] = orig + eps
+            loss_result = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
+            loss_eps = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
+            grad_chunk[j] = (loss_eps - loss) / eps
+            variable[i, j] = orig
+            if name == 'd':
+                self.d[j] = orig
 
-        print(f'Completed {name} gradient chunk. i_start: {i_start}, i_end: {i_end}')
+        print(f'Completed {name} gradient chunk at row: {i}')
 
         return grad_chunk
 
@@ -450,55 +455,23 @@ class SpikeTrainModel:
         pool = mp.Pool()
 
         # alpha gradient
-        chunk_size = K // mp.cpu_count()
-        if chunk_size == 0:
-            chunk_size = K
-        params = []
-        for k in range(0, K, chunk_size):
-            k_start = k
-            k_end = min(k + chunk_size, K)
-            params.append((self.alpha, k_start, k_end, eps, tau_psi, tau_beta, tau_G, loss))
-
-        results = pool.map(self.compute_grad_chunk, params)
-        alpha_grad = np.concatenate([r for r in results])
+        alpha_async_results = [pool.apply_async(self.compute_grad_chunk, args=(self.alpha, k, eps, tau_psi, tau_beta, tau_G, loss)) for k in range(K)]
 
         # gamma gradient
-        chunk_size = L // mp.cpu_count()
-        if chunk_size == 0:
-            chunk_size = L
-        params = []
-        for l in range(0, L, chunk_size):
-            l_start = l
-            l_end = min(l + chunk_size, L)
-            params.append((self.gamma, l_start, l_end, eps, tau_psi, tau_beta, tau_G, loss))
-
-        results = pool.map(self.compute_grad_chunk, params)
-        gamma_grad = np.concatenate([r for r in results])
+        gamma_async_results = [pool.apply_async(self.compute_grad_chunk, args=(self.gamma, l, eps, tau_psi, tau_beta, tau_G, loss)) for l in range(L)]
 
         # g_star gradient
-        chunk_size = K // mp.cpu_count()
-        if chunk_size == 0:
-            chunk_size = K
-        params = []
-        for k in range(0, K, chunk_size):
-            k_start = k
-            k_end = min(k + chunk_size, K)
-            params.append((self.G_star, k_start, k_end, eps, tau_psi, tau_beta, tau_G, loss))
+        g_star_async_results = [pool.apply_async(self.compute_grad_chunk, args=(self.G_star, k, eps, tau_psi, tau_beta, tau_G, loss)) for k in range(K)]
 
-        results = pool.map(self.compute_grad_chunk, params)
-        G_star_grad = np.concatenate([r for r in results])
+        # d gradient
+        d_grad = pool.apply_async(self.compute_grad_chunk, args=(self.d[np.newaxis, :], 0, eps, tau_psi, tau_beta, tau_G, loss))
 
         pool.close()
         pool.join()
 
-        # d gradient
-        d_grad = np.zeros_like(self.d)
-        for k in range(K):
-            orig = self.d[k]
-            self.d[k] = orig + eps
-            loss_d = self.compute_loss_time_warping(tau_psi, tau_beta, tau_G)
-            loss_eps = loss_d['log_likelihood'] + loss_d['psi_penalty'] + loss_d['beta_penalty']
-            d_grad[k] = (loss_eps - loss) / eps
-            self.d[k] = orig
+        alpha_grad = np.vstack([r.get() for r in alpha_async_results])
+        gamma_grad = np.vstack([r.get() for r in gamma_async_results])
+        G_star_grad = np.vstack([r.get() for r in g_star_async_results])
+        d_grad = d_grad.get()
 
         return alpha_grad, gamma_grad, G_star_grad, d_grad
