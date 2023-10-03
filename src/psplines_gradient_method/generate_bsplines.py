@@ -6,13 +6,11 @@ def generate_bspline_functions(time, degree, deriv=False):
     B = []
     k = degree
     knots = np.concatenate([np.repeat(time[0], k), time, np.repeat(time[-1], k)])
-    if deriv:
-        k = k - 1
-    for i in range(len(knots)):
-        b = BSpline.basis_element(knots[i:(i + k + 2)], False)
+    k_ = k - 1 if deriv else k
+    for i in range(len(knots)-(k+1)):
+        b = BSpline.basis_element(knots[i:(i + k_ + 2)], False)
         B.append(b)
-    remove_indxs = [202, 203, 204, 205]
-    return [x for i, x in enumerate(B) if i not in remove_indxs]
+    return B
 
 
 def generate_bspline_matrix(bspline_functions, time_matrix):
