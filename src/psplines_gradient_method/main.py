@@ -1,194 +1,123 @@
 import numpy as np
-import src.simulate_data as sd
-from src.psplines_gradient_method.manual_implemetation import log_prob, log_obj, log_obj_with_backtracking_line_search, \
-    log_obj_with_backtracking_line_search_sequential
-from src.psplines_gradient_method.general_functions import compute_lambda, compute_numerical_grad, \
-    create_first_diff_matrix, create_second_diff_matrix, plot_binned, plot_spikes, plot_intensity_and_latents
-from src.psplines_gradient_method.generate_bsplines import generate_bsplines
+from src.simulate_data import DataAnalyzer
+from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
+from src.psplines_gradient_method.general_functions import compute_lambda, plot_binned, plot_spikes
 import matplotlib.pyplot as plt
+import time
 
-
-K, degree, T = 100, 3, 200
-intensity_type = ('constant', '1peak', '2peaks')
-L = len(intensity_type) - 1
-# base firing rate
-time = np.arange(0, T, 1) / 100
-dt = time[1] - time[0]
-
-latent_factors = sd.generate_latent_factors(time, intensity_type=intensity_type)
-np.random.seed(0)
-intensity, binned, spikes = sd.generate_spike_trains(latent_factors, (0.1, 0.13, 0.13), (-3, -3, -3),
-                                                     (1 / 3, 1 / 3, 1 / 3), K)
-K = binned.shape[0]
-
-# plot_intensity_and_latents(time, latent_factors, intensity)
+self = DataAnalyzer().initialize()
+binned, stim_time = self.sample_data()
+binned_spikes = np.where(binned >= 1)
+# plot_spikes(binned_spikes)
+intensity, latent_factors = self.intensity, self.latent_factors
 # plot_binned(binned)
-# plot_spikes(spikes)
+# self.plot_intensity_and_latents()
 
-# Manual Implementation
 Y = binned  # K x T
-B = generate_bsplines(time, degree)  # T x T. The coefficient (beta) will be regularized
-P = B.shape[0]
-# start = 190
-# num_basis = 10
-# for i in range(num_basis):
-#     plt.plot(time[start:(start+num_basis)], B[i+start, start:(start+num_basis)])
-# plt.show()
-
-np.random.seed(0)
-G = np.random.rand(K, L)
-np.random.seed(0)
-beta = np.random.rand(L, P)
-np.random.seed(0)
-d = np.random.rand(K)
+degree = 3
+L = self.latent_factors.shape[0] - 1
+model = SpikeTrainModel(Y, stim_time).initialize(L, degree)
 
 # Training parameters
-num_epochs = 2500
-Omega = create_first_diff_matrix(P)
+num_epochs = 5000
 
 # Training hyperparameters
-tau_beta = 80
+tau_beta = 100
 tau_G = 2
 
-# # Training hyperparameters
-# num_epochs = 4000
-# beta_tausq = 80*np.ones(L) # 10*np.square(np.random.rand(L))
-# G_eta = 10
-# smooth = 2000
-# G_smooth = 400
-# Omega = create_second_diff_matrix(P)
-
-G_grads_norm = []
-beta_grads_norm = []
-d_grads_norm = []
-G_smooths = []
-beta_smooths = []
-d_smooths = []
 losses = []
 
-d_loss_increase = []
-d_next_likelihood = []
-G_loss_increase = []
-G_next_likelihood = []
 beta_loss_increase = []
-beta_next_likelihood = []
-smooth_d = []
-smooth_G = []
-smooth_beta = []
-iters_d = []
-iters_G = []
-iters_beta = []
-for epoch in range(num_epochs):
-    # Forward pass and gradient computation
+G_loss_increase = []
+d_loss_increase = []
 
-    # result = log_obj(Y, B, d, G, beta, Omega, tau_beta, tau_G, tau_d, smooth_beta, smooth_G, smooth_d, dt)
-    result = log_obj_with_backtracking_line_search_sequential(Y, B, d, G, beta, Omega, tau_beta, tau_G, dt)
+beta_learning_rate = []
+G_learning_rate = []
+d_learning_rate = []
+
+beta_iters = []
+G_iters = []
+d_iters = []
+
+total_time = 0
+epoch_time = 0
+for epoch in range(num_epochs):
+    start_time = time.time()  # Record the start time of the epoch
+
+    result = model.log_obj_with_backtracking_line_search(tau_beta, tau_G)
     loss = result["loss"]
-    dd = result["dLogL_dd"]
-    dG = result["dlogL_dG"]
-    dbeta = result["dlogL_dbeta"]
-    log_likelihood = result["log_likelihood"]
     beta_penalty = result["beta_penalty"]
     G_penalty = result["G_penalty"]
+    dbeta = result["dlogL_dbeta"]
+    dG_star = result["dlogL_dG"]
+    dd = result["dlogL_dd"]
 
-    G_grads_norm.append(np.linalg.norm(dG, ord=2))
-    beta_grads_norm.append(np.linalg.norm(dbeta, ord=2))
-    d_grads_norm.append(np.linalg.norm(dd, ord=2))
-    d_loss_increase.append(result["d_loss_increase"])
-    d_next_likelihood.append(result["d_likelihood_next"])
-    G_loss_increase.append(result["G_loss_increase"])
-    G_next_likelihood.append(result["G_likelihood_next"])
-    beta_loss_increase.append(result["beta_loss_increase"])
-    beta_next_likelihood.append(result["beta_likelihood_next"])
-    smooth_d.append(result["smooth_d"])
-    smooth_G.append(result["smooth_G"])
-    smooth_beta.append(result["smooth_beta"])
-    iters_d.append(result["iters_d"])
-    iters_G.append(result["iters_G"])
-    iters_beta.append(result["iters_beta"])
-
-    if epoch > 0:
-        G_smooths.append(np.linalg.norm(dG - prev_dG, ord=2) / np.linalg.norm(G - prev_G, ord=2))
-        beta_smooths.append(np.linalg.norm(dbeta - prev_dbeta, ord=2) / np.linalg.norm(beta - prev_beta, ord=2))
-        d_smooths.append(np.linalg.norm(dd - prev_dd, ord=2) / np.linalg.norm(d - prev_d, ord=2))
-
-    prev_G = np.copy(G)
-    prev_dG = np.copy(dG)
-    prev_beta = np.copy(beta)
-    prev_dbeta = np.copy(dbeta)
-    prev_d = np.copy(d)
-    prev_dd = np.copy(dd)
-
-    # Update parameters using gradients
-    d = result["d_plus"]
-    G = result["G_plus"]
-    beta = result["beta_plus"]
-    # Store losses and gradients
     losses.append(loss)
+
+    beta_loss_increase.append(result["beta_loss_increase"])
+    G_loss_increase.append(result["G_loss_increase"])
+    d_loss_increase.append(result["d_loss_increase"])
+
+    beta_learning_rate.append(result["smooth_beta"])
+    G_learning_rate.append(result["smooth_G"])
+    d_learning_rate.append(result["smooth_d"])
+
+    beta_iters.append(result["iters_beta"])
+    G_iters.append(result["iters_G"])
+    d_iters.append(result["iters_d"])
+
+    end_time = time.time()  # Record the end time of the epoch
+    elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
+    epoch_time += elapsed_time  # Record the elapsed time for the epoch
+    total_time += elapsed_time  # Calculate the total time for training
+
     if epoch % 100 == 0:
-        print(f"Epoch {epoch}, Loss {loss}")
+        print(f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time/60:.2f} mins, Total Time: {total_time/(60*60):.2f} hrs")
+        epoch_time = 0  # Reset the epoch time
 
 num_epochs = len(losses)
 losses = np.array(losses)
-G_smooths = np.array(G_smooths)
-beta_smooths = np.array(beta_smooths)
-d_smooths = np.array(d_smooths)
-smooth_G = np.array(smooth_G)
-smooth_beta = np.array(smooth_beta)
-smooth_d = np.array(smooth_d)
-iters_d = np.array(iters_d)
-iters_G = np.array(iters_G)
-iters_beta = np.array(iters_beta)
+beta_learning_rate = np.array(beta_learning_rate)
+G_learning_rate = np.array(G_learning_rate)
+d_learning_rate = np.array(d_learning_rate)
+beta_iters = np.array(beta_iters)
+G_iters = np.array(G_iters)
+d_iters = np.array(d_iters)
 plt.plot(np.arange(0, num_epochs), losses[0:])
 plt.title('Losses')
 plt.show()
-plt.plot(np.arange(1, num_epochs), G_smooths)
-plt.title('G Smooths Numeric')
+plt.plot(np.arange(0, num_epochs), beta_learning_rate)
+plt.title('Beta Learning Rates')
 plt.show()
-plt.plot(np.arange(1, num_epochs), beta_smooths)
-plt.title('Beta Smooths Numeric')
+plt.plot(np.arange(0, num_epochs), G_learning_rate)
+plt.title('G Learning Rates')
 plt.show()
-plt.plot(np.arange(1, num_epochs), d_smooths)
-plt.title('d Smooths Numeric')
+plt.plot(np.arange(0, num_epochs), d_learning_rate)
+plt.title('d Learning Rates')
 plt.show()
-plt.plot(np.arange(0, num_epochs), 1 / smooth_G)
-plt.title('G Smooths Line Search')
-plt.show()
-plt.plot(np.arange(0, num_epochs), 1 / smooth_beta)
-plt.title('Beta Smooths  Line Search')
-plt.show()
-plt.plot(np.arange(0, num_epochs), 1 / smooth_d)
-plt.title('d Smooths  Line Search')
-plt.show()
-plt.plot(np.arange(0, num_epochs), iters_G)
-plt.title('G Iters')
-plt.show()
-plt.plot(np.arange(0, num_epochs), iters_beta)
+plt.plot(np.arange(0, num_epochs), beta_iters)
 plt.title('Beta Iters')
 plt.show()
-plt.plot(np.arange(0, num_epochs), iters_d)
+plt.plot(np.arange(0, num_epochs), G_iters)
+plt.title('G Iters')
+plt.show()
+plt.plot(np.arange(0, num_epochs), d_iters)
 plt.title('d Iters')
 plt.show()
 
-combined = np.concatenate([losses[:, np.newaxis], smooth_G[:, np.newaxis], smooth_beta[:, np.newaxis], smooth_d[:, np.newaxis],
-                            iters_G[:, np.newaxis], iters_beta[:, np.newaxis], iters_d[:, np.newaxis]], axis=1)
-d_loss_increase = np.array(d_loss_increase)[:, np.newaxis]
-G_loss_increase = np.array(G_loss_increase)[:, np.newaxis]
-
-lambda_manual = compute_lambda(B, d, G, beta)
+lambda_manual = compute_lambda(model.V, model.d, model.G, model.beta)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
-plt.plot(time, avg_lambda_manual)
+plt.plot(stim_time, avg_lambda_manual)
 plt.show()
 np.mean(np.square(intensity - lambda_manual))
-for i in range(K):
-    plt.plot(time, lambda_manual[i, :] + i * 10)
+for i in range(model.Y.shape[0]):
+    plt.plot(stim_time, lambda_manual[i, :] + i * 2)
 plt.show()
 
-latent_factors_manual = beta @ B
+latent_factors_manual = model.beta @ model.V
 for i in range(L):
-    plt.plot(np.concatenate([[time[0] - dt], time]), beta[i, :])
-    plt.plot(time, latent_factors_manual[i, :])
+    # plt.plot(np.concatenate([[stim_time[0] - 0.02, stim_time[0] - 0.01], stim_time]), model.beta[i, :])
+    plt.plot(stim_time, latent_factors_manual[i, :])
     plt.title(f'Factor [{i}, :]')
 plt.show()
 
-G_and_d = np.concatenate([G, d[:, np.newaxis]], axis=1)
