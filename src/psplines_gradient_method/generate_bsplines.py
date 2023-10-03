@@ -9,7 +9,7 @@ def generate_bsplines(time, degree):
     B = []
     k = degree
     knots = np.concatenate([np.repeat(time[0], k), time, np.repeat(time[-1], k)])
-    for i in range(len(knots) - (k+2)):
+    for i in range(len(knots) - (k+1)):
         b = BSpline.basis_element(knots[i:(i + k + 2)], False)
         val = b(time)
         B.append(val)
