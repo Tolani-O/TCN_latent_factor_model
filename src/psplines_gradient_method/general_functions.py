@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -58,9 +59,10 @@ def plot_spikes(spikes, x_offset=0):
         indices = np.where(spikes[0] == i)[0]
         values = (spikes[1][indices] - x_offset)/1000
         grouped_s.append((i, values))
+    plt.figure()
     for group in grouped_s:
         plt.scatter(group[1], np.zeros_like(group[1]) + group[0], s=1, c='black')
-    plt.show()
+    plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_spikes.png'))
 
 
 def plot_binned(binned):
@@ -68,13 +70,14 @@ def plot_binned(binned):
     _, ax = plt.subplots()
     ax.imshow(binned)
     ax.invert_yaxis()
-    plt.show()
+    plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_binned.png'))
 
 
 def plot_bsplines(B, time):
     # plot bsplines
     start = 190
     num_basis = 10
+    plt.figure()
     for i in range(num_basis):
         plt.plot(time[start:(start+num_basis)], B[i+start, start:(start+num_basis)])
-    plt.show()
+    plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_bsplines.png'))
