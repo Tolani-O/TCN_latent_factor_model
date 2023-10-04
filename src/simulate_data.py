@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -94,11 +95,13 @@ class DataAnalyzer:
 
         time, latent_factors, intensity = self.time, self.latent_factors, self.intensity
         # plot latent factors
+        plt.figure()
         for i in range(latent_factors.shape[0]):
             plt.plot(time, latent_factors[i, :] + i)
-        plt.show()
+        plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_latent_factors.png'))
 
         # plot neuron intensities
+        plt.figure()
         for i in range(intensity.shape[0]):
             plt.plot(time, intensity[i, :] + i * 0.1)
-        plt.show()
+        plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_intensities.png'))
