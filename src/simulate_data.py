@@ -58,7 +58,7 @@ class DataAnalyzer:
         return latent_factors
 
 
-    def generate_spike_trains(self, latent_factors, coeff, bias, ratio, num_trials):
+    def generate_spike_trains(self, latent_factors, coeff, bias, ratio, num_trials, max_offset=20):
 
         num_factors, num_timesteps = latent_factors.shape
         if num_factors == 1:
@@ -76,6 +76,10 @@ class DataAnalyzer:
         for i in range(num_factors):
             neuron_count = int(num_trials * ratio[i])
             intensity[last_binned_index:(last_binned_index+neuron_count), :] = np.vstack([np.exp(bias[i] + coeff[i] * latent_factors[i, :])] * neuron_count)
+            # Add random integer offset to each row of intensity
+            for j in range(last_binned_index, last_binned_index + neuron_count):
+                offset = np.random.randint(-max_offset, max_offset + 1)  # Random offset between -max_offset and max_offset
+                intensity[j, :] = np.roll(intensity[j, :], offset)
             binned[last_binned_index:(last_binned_index+neuron_count), :] = (
                 np.random.poisson(intensity[last_binned_index:(last_binned_index+neuron_count), :]))
             last_binned_index += neuron_count
