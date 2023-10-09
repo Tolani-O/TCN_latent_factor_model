@@ -12,7 +12,7 @@ class DataAnalyzer:
         self.binned = None
 
 
-    def initialize(self, K=100, T=200, seed=0, intensity_type=('constant', '1peak', '2peaks')):
+    def initialize(self, K=100, T=200, seed=0, intensity_type=('constant', '1peak', '2peaks'), max_offset=0):
         time = np.arange(0, T, 1) / 100
         np.random.seed(seed)
         self.latent_factors = self.generate_latent_factors(time, intensity_type)
@@ -21,7 +21,8 @@ class DataAnalyzer:
         self.intensity, self.binned = self.generate_spike_trains(self.latent_factors,
                                                                  (0.1, 0.13, 0.13),
                                                                  (-3, -3, -3),
-                                                                 (1/3, 1/3, 1/3), K)
+                                                                 (1/3, 1/3, 1/3),
+                                                                 K, max_offset)
         self.time = time
         return self
 
@@ -58,7 +59,7 @@ class DataAnalyzer:
         return latent_factors
 
 
-    def generate_spike_trains(self, latent_factors, coeff, bias, ratio, num_trials, max_offset=20):
+    def generate_spike_trains(self, latent_factors, coeff, bias, ratio, num_trials, max_offset):
 
         num_factors, num_timesteps = latent_factors.shape
         if num_factors == 1:

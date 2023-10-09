@@ -6,7 +6,7 @@ from src.psplines_gradient_method.general_functions import compute_lambda, plot_
 import matplotlib.pyplot as plt
 import time
 
-self = DataAnalyzer().initialize()
+self = DataAnalyzer().initialize(K=600, max_offset=20)
 binned, stim_time = self.sample_data()
 binned_spikes = np.where(binned >= 1)
 # plot_spikes(binned_spikes)
@@ -20,28 +20,27 @@ L = self.latent_factors.shape[0] - 1
 model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 # Training parameters
-num_epochs = 5000
+num_epochs = 1000
 
 # Training hyperparameters
-tau_psi = 80
-tau_beta = 80
-tau_G = 2
+tau_psi = 5000
+tau_beta = 200
 
 losses = []
 
 alpha_loss_increase = []
 gamma_loss_increase = []
-G_loss_increase = []
+chi_loss_increase = []
 d_loss_increase = []
 
 alpha_learning_rate = []
 gamma_learning_rate = []
-G_learning_rate = []
+chi_learning_rate = []
 d_learning_rate = []
 
 alpha_iters = []
 gamma_iters = []
-G_iters = []
+chi_iters = []
 d_iters = []
 
 total_time = 0
@@ -49,31 +48,30 @@ epoch_time = 0
 for epoch in range(num_epochs):
     start_time = time.time()  # Record the start time of the epoch
 
-    result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_G)
+    result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta)
     loss = result["loss"]
     psi_penalty = result["psi_penalty"]
     beta_penalty = result["beta_penalty"]
-    G_penalty = result["G_penalty"]
     dalpha = result["dlogL_dalpha"]
     dgamma = result["dlogL_dgamma"]
-    dG_star = result["dlogL_dG"]
+    dchi = result["dlogL_dchi"]
     dd = result["dlogL_dd"]
 
     losses.append(loss)
 
     alpha_loss_increase.append(result["alpha_loss_increase"])
     gamma_loss_increase.append(result["gamma_loss_increase"])
-    G_loss_increase.append(result["G_loss_increase"])
+    chi_loss_increase.append(result["chi_loss_increase"])
     d_loss_increase.append(result["d_loss_increase"])
 
     alpha_learning_rate.append(result["smooth_alpha"])
     gamma_learning_rate.append(result["smooth_gamma"])
-    G_learning_rate.append(result["smooth_G"])
+    chi_learning_rate.append(result["smooth_chi"])
     d_learning_rate.append(result["smooth_d"])
 
     alpha_iters.append(result["iters_alpha"])
     gamma_iters.append(result["iters_gamma"])
-    G_iters.append(result["iters_G"])
+    chi_iters.append(result["iters_chi"])
     d_iters.append(result["iters_d"])
 
     end_time = time.time()  # Record the end time of the epoch
@@ -89,11 +87,11 @@ num_epochs = len(losses)
 losses = np.array(losses)
 alpha_learning_rate = np.array(alpha_learning_rate)
 gamma_learning_rate = np.array(gamma_learning_rate)
-G_learning_rate = np.array(G_learning_rate)
+chi_learning_rate = np.array(chi_learning_rate)
 d_learning_rate = np.array(d_learning_rate)
 alpha_iters = np.array(alpha_iters)
 gamma_iters = np.array(gamma_iters)
-G_iters = np.array(G_iters)
+chi_iters = np.array(chi_iters)
 d_iters = np.array(d_iters)
 plt.plot(np.arange(0, num_epochs), losses[0:])
 plt.title('Losses')
@@ -104,7 +102,7 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), gamma_learning_rate)
 plt.title('Beta Learning Rates')
 plt.show()
-plt.plot(np.arange(0, num_epochs), G_learning_rate)
+plt.plot(np.arange(0, num_epochs), chi_learning_rate)
 plt.title('G Learning Rates')
 plt.show()
 plt.plot(np.arange(0, num_epochs), d_learning_rate)
@@ -116,7 +114,7 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), gamma_iters)
 plt.title('Beta Iters')
 plt.show()
-plt.plot(np.arange(0, num_epochs), G_iters)
+plt.plot(np.arange(0, num_epochs), chi_iters)
 plt.title('G Iters')
 plt.show()
 plt.plot(np.arange(0, num_epochs), d_iters)
@@ -129,7 +127,10 @@ psi_norm = (1 / (psi[:, (model.V.shape[0]-1), np.newaxis])) * psi
 time_matrix = max(model.time) * psi_norm @ model.V
 B_psi = generate_bspline_matrix(model.B_func_n, time_matrix)
 beta = np.exp(model.gamma)
-lambda_manual = compute_lambda(B_psi, model.d, model.G_star, beta)
+exp_chi = np.exp(model.chi)  # variable
+G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
+G_star = (G @ model.I_beta_L.T) * model.mask_G  # variable
+lambda_manual = compute_lambda(B_psi, model.d, G_star, beta)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
 plt.plot(stim_time, avg_lambda_manual)
 plt.show()
