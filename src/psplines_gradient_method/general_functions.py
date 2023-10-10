@@ -14,6 +14,7 @@ def create_precision_matrix(P):
     Omega[-1, -1] = 1
     return Omega
 
+
 def create_first_diff_matrix(P):
     D = np.zeros((P-1, P))
     # fill the main diagonal with -1s
@@ -33,22 +34,6 @@ def create_second_diff_matrix(P):
     # set the last element to 1
     D[-1, -1] = 1
     return D
-
-
-def create_masking_matrix(N, M):
-    mat = np.zeros((N, N * M), dtype=int)  # Start with a kxkm matrix of zeros
-    rows = np.repeat(np.arange(N), M)
-    cols = np.arange(N * M).reshape(N, M).ravel()
-    mat[rows, cols] = 1
-    return mat
-
-
-def compute_lambda(B_psi, d, G_star, beta):
-    K = len(d)
-    J = np.ones((K, B_psi.shape[1]))
-    diagdJ_plus_GBetaB = d[:, np.newaxis] * J + G_star @ np.kron(np.eye(K), beta) @ B_psi
-    lambda_ = np.exp(diagdJ_plus_GBetaB)
-    return lambda_
 
 
 def plot_spikes(spikes, x_offset=0):

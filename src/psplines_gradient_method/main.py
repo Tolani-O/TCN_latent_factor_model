@@ -1,12 +1,12 @@
 import numpy as np
-from src.psplines_gradient_method.generate_bsplines import generate_bspline_matrix
+from scipy.interpolate import BSpline
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
-from src.psplines_gradient_method.general_functions import compute_lambda, plot_binned, plot_spikes
+from src.psplines_gradient_method.general_functions import plot_binned, plot_spikes
 import matplotlib.pyplot as plt
 import time
 
-self = DataAnalyzer().initialize(K=600, max_offset=20)
+self = DataAnalyzer().initialize(K=600, max_offset=0)
 binned, stim_time = self.sample_data()
 binned_spikes = np.where(binned >= 1)
 # plot_spikes(binned_spikes)
@@ -16,7 +16,7 @@ intensity, latent_factors = self.intensity, self.latent_factors
 
 Y = binned  # K x T
 degree = 3
-L = self.latent_factors.shape[0] - 1
+L = 3#self.latent_factors.shape[0] - 1
 model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 # Training parameters
@@ -125,12 +125,14 @@ exp_alpha_c = (np.exp(model.alpha) @ model.alpha_prime_multiply) + model.alpha_p
 psi = exp_alpha_c @ model.U_psi
 psi_norm = (1 / (psi[:, (model.V.shape[0]-1), np.newaxis])) * psi
 time_matrix = max(model.time) * psi_norm @ model.V
-B_psi = generate_bspline_matrix(model.B_func_n, time_matrix)
+B_sparse = [BSpline.design_matrix(time, model.knots, model.degree).transpose() for time in time_matrix]
 beta = np.exp(model.gamma)
-exp_chi = np.exp(model.chi)  # variable
-G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-G_star = (G @ model.I_beta_L.T) * model.mask_G  # variable
-lambda_manual = compute_lambda(B_psi, model.d, G_star, beta)
+exp_chi = np.exp(model.chi)
+G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi
+GBeta = G @ beta
+GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])
+diagdJ_plus_GBetaB = model.d + GBetaBPsi  # variable
+lambda_manual = np.exp(diagdJ_plus_GBetaB)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
 plt.plot(stim_time, avg_lambda_manual)
 plt.show()
@@ -150,4 +152,4 @@ for i in range(model.Y.shape[0]):
     plt.plot(stim_time, time_matrix[i, :] + i * 0.01)
 plt.show()
 
-G_and_d = np.concatenate([G, d[:, np.newaxis]], axis=1)
+G_and_d = np.concatenate([G, model.d], axis=1)
