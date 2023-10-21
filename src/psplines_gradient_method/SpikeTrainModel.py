@@ -208,7 +208,7 @@ class SpikeTrainModel:
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(self.gamma.shape[0]) - GBeta[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
+        dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(self.gamma.shape[0]) - G[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
         while ct < max_iters:
             chi_plus = self.chi + learning_rate * dlogL_dchi
 
