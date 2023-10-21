@@ -82,7 +82,7 @@ class SpikeTrainModel:
         exp_chi = np.exp(self.chi)  # variable
         G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt  # variable
         # compute loss
@@ -96,7 +96,7 @@ class SpikeTrainModel:
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dgamma = beta * (G.T @ np.vstack([y_minus_lambda_del_t[i] @ b.transpose() for i, b in enumerate(B_sparse)]) -
+        dlogL_dgamma = beta * (G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
                                2 * tau_beta * beta @ self.Omega_beta)
         while ct < max_iters:
             gamma_plus = self.gamma + learning_rate * dlogL_dgamma
@@ -104,7 +104,7 @@ class SpikeTrainModel:
             # set up variables to compute loss
             beta = np.exp(gamma_plus)
             GBeta = G @ beta
-            GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])
+            GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
             diagdJ_plus_GBetaB = self.d + GBetaBPsi
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt
             # compute loss
@@ -138,7 +138,7 @@ class SpikeTrainModel:
         # exp_chi = np.exp(self.chi)  # didnt change
         # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
         GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt  # variable
         # compute updated penalty
@@ -150,10 +150,10 @@ class SpikeTrainModel:
         y_minus_lambda_del_t = self.Y - lambda_del_t
         knots_Bpsinminus1_1 = [(self.knots_1 * BSpline.design_matrix(time, self.knots[:-1], (self.degree-1)).transpose()).tocsc() for time in time_matrix]
         knots_Bpsinminus1_2 = [vstack([b_deriv[1:], csr_array((1, self.time.shape[0]))]).tocsc() for b_deriv in knots_Bpsinminus1_1]
-        dlogL_dalpha = np.vstack([self.degree * max(self.time) * ((GBeta[i] @ (knots_Bpsinminus1_1[i] - knots_Bpsinminus1_2[i])) @
-                          ((psi_norm[i, 1] * exp_alpha_c[i, :, np.newaxis] * (self.U_psi - psi_norm[i]) @ self.V) * y_minus_lambda_del_t[i]).T) -
-                                  2 * tau_psi * psi_norm[i, 1] * exp_alpha_c[i] * ((psi_norm[i] @ self.Omega_psi) @ (self.U_psi - psi_norm[i]).T)
-                          for i in range(K)])
+        dlogL_dalpha = np.vstack([self.degree * max(self.time) * ((GBeta[k] @ (knots_Bpsinminus1_1[k] - knots_Bpsinminus1_2[k])) @
+                          ((psi_norm[k, 1] * exp_alpha_c[k, :, np.newaxis] * (self.U_psi - psi_norm[k]) @ self.V) * y_minus_lambda_del_t[k]).T) -
+                                  2 * tau_psi * psi_norm[k, 1] * exp_alpha_c[k] * ((psi_norm[k] @ self.Omega_psi) @ (self.U_psi - psi_norm[k]).T)
+                          for k in range(K)])
         # we multiply by max time here because in the likelihood we multiply by max time, so its the derivarive of a constant times a function of alpha.
         while ct < max_iters:  # otherwise there isn't a good decrement direction/it runs into overflow limitations
             alpha_plus = self.alpha + learning_rate * dlogL_dalpha
@@ -164,7 +164,7 @@ class SpikeTrainModel:
             psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # variable, called \psi' in the document
             time_matrix = max(self.time) * (psi_norm @ self.V)  # variable
             B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]
-            GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+            GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
             diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt
             # compute loss
@@ -198,7 +198,7 @@ class SpikeTrainModel:
         # exp_chi = np.exp(self.chi)  # didnt change
         # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
         # GBeta = G @ beta  # didnt change
-        GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt
         # compute updated penalty
@@ -208,7 +208,7 @@ class SpikeTrainModel:
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dchi = np.vstack([((y_minus_lambda_del_t[i] @ b.transpose()) @ (G[i, :, np.newaxis] * (GBeta[i] - beta)).T) for i, b in enumerate(B_sparse)])
+        dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(self.gamma.shape[0]) - GBeta[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
         while ct < max_iters:
             chi_plus = self.chi + learning_rate * dlogL_dchi
 
@@ -216,7 +216,7 @@ class SpikeTrainModel:
             exp_chi = np.exp(chi_plus)  # variable
             G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
             GBeta = G @ beta  # didnt change
-            GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+            GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
             diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt
             # compute loss
@@ -249,7 +249,7 @@ class SpikeTrainModel:
         exp_chi = np.exp(self.chi)  # now fixed
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # now fixed
         GBeta = G @ beta  # now fixed
-        GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # now fixed
+        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # now fixed
         diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt  # variable
 
@@ -321,7 +321,7 @@ class SpikeTrainModel:
         exp_chi = np.exp(self.chi)  # variable
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt  # variable
         # compute loss
@@ -351,7 +351,7 @@ class SpikeTrainModel:
         exp_chi = np.exp(self.chi)  # variable
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])  # variable
+        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         diagdJ_plus_GBetaB = self.d + GBetaBPsi  # variable
         lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt  # variable
         # compute gradients
@@ -359,16 +359,15 @@ class SpikeTrainModel:
         knots_Bpsinminus1_1 = [(self.knots_1 * BSpline.design_matrix(time, self.knots[:-1], (self.degree - 1)).transpose()).tocsc() for time in time_matrix]
         knots_Bpsinminus1_2 = [vstack([b_deriv[1:], csr_array((1, self.time.shape[0]))]).tocsc() for b_deriv in knots_Bpsinminus1_1]
 
-        dlogL_dgamma = beta * (G.T @ np.vstack([y_minus_lambda_del_t[i] @ b.transpose() for i, b in enumerate(B_sparse)]) -
+        dlogL_dgamma = beta * (G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
                     2 * tau_beta * beta @ self.Omega_beta)
 
+        dlogL_dalpha = np.vstack([self.degree * max(self.time) * ((GBeta[k] @ (knots_Bpsinminus1_1[k] - knots_Bpsinminus1_2[k])) @
+                    ((psi_norm[k, 1] * exp_alpha_c[k, :, np.newaxis] * (self.U_psi - psi_norm[k]) @ self.V) * y_minus_lambda_del_t[k]).T) -
+             2 * tau_psi * psi_norm[k, 1] * exp_alpha_c[k] * ((psi_norm[k] @ self.Omega_psi) @ (self.U_psi - psi_norm[k]).T)
+             for k in range(K)])
 
-        dlogL_dalpha = np.vstack( [self.degree * max(self.time) * ((GBeta[i] @ (knots_Bpsinminus1_1[i] - knots_Bpsinminus1_2[i])) @
-                    ((psi_norm[i, 1] * exp_alpha_c[i, :, np.newaxis] * (self.U_psi - psi_norm[i]) @ self.V) * y_minus_lambda_del_t[i]).T) -
-             2 * tau_psi * psi_norm[i, 1] * exp_alpha_c[i] * ((psi_norm[i] @ self.Omega_psi) @ (self.U_psi - psi_norm[i]).T)
-             for i in range(K)])
-
-        dlogL_dchi = np.vstack([((y_minus_lambda_del_t[i] @ b.transpose()) @ (G[i, :, np.newaxis] * (GBeta[i] - beta)).T) for i, b in enumerate(B_sparse)])
+        dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(self.gamma.shape[0]) - GBeta[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
 
         dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)
 
