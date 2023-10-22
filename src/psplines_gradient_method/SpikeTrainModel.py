@@ -150,9 +150,9 @@ class SpikeTrainModel:
         y_minus_lambda_del_t = self.Y - lambda_del_t
         knots_Bpsinminus1_1 = [(self.knots_1 * BSpline.design_matrix(time, self.knots[:-1], (self.degree-1)).transpose()).tocsc() for time in time_matrix]
         knots_Bpsinminus1_2 = [vstack([b_deriv[1:], csr_array((1, self.time.shape[0]))]).tocsc() for b_deriv in knots_Bpsinminus1_1]
-        dlogL_dalpha = np.vstack([self.degree * max(self.time) * ((GBeta[k] @ (knots_Bpsinminus1_1[k] - knots_Bpsinminus1_2[k])) @
-                          ((psi_norm[k, 1] * exp_alpha_c[k, :, np.newaxis] * (self.U_psi - psi_norm[k]) @ self.V) * y_minus_lambda_del_t[k]).T) -
-                                  2 * tau_psi * psi_norm[k, 1] * exp_alpha_c[k] * ((psi_norm[k] @ self.Omega_psi) @ (self.U_psi - psi_norm[k]).T)
+        dlogL_dalpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c * np.vstack([self.degree * max(self.time) * ((GBeta[k] @ (knots_Bpsinminus1_1[k] - knots_Bpsinminus1_2[k])) @
+                          (((self.U_psi - psi_norm[k]) @ self.V) * y_minus_lambda_del_t[k]).T) -
+                                  2 * tau_psi * ((psi_norm[k] @ self.Omega_psi) @ (self.U_psi - psi_norm[k]).T)
                           for k in range(K)])
         # we multiply by max time here because in the likelihood we multiply by max time, so its the derivarive of a constant times a function of alpha.
         while ct < max_iters:  # otherwise there isn't a good decrement direction/it runs into overflow limitations

@@ -6,7 +6,7 @@ from src.psplines_gradient_method.general_functions import plot_binned, plot_spi
 import matplotlib.pyplot as plt
 import time
 
-self = DataAnalyzer().initialize(K=600, max_offset=0)
+self = DataAnalyzer().initialize(K=200, max_offset=0)
 binned, stim_time = self.sample_data()
 binned_spikes = np.where(binned >= 1)
 # plot_spikes(binned_spikes)
@@ -16,7 +16,7 @@ intensity, latent_factors = self.intensity, self.latent_factors
 
 Y = binned  # K x T
 degree = 3
-L = 3#self.latent_factors.shape[0] - 1
+L = self.latent_factors.shape[0] - 1
 model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 # Training parameters
@@ -80,7 +80,7 @@ for epoch in range(num_epochs):
     total_time += elapsed_time  # Calculate the total time for training
 
     if epoch % 100 == 0:
-        print(f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time/60:.2f} mins, Total Time: {total_time/(60*60):.2f} hrs")
+        print(f"Epoch {epoch}, Likelihood {loss}, Epoch Time: {epoch_time/60:.2f} mins, Total Time: {total_time/(60*60):.2f} hrs")
         epoch_time = 0  # Reset the epoch time
 
 num_epochs = len(losses)
@@ -130,7 +130,7 @@ beta = np.exp(model.gamma)
 exp_chi = np.exp(model.chi)
 G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi
 GBeta = G @ beta
-GBetaBPsi = np.vstack([GBeta[i] @ b for i, b in enumerate(B_sparse)])
+GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
 diagdJ_plus_GBetaB = model.d + GBetaBPsi  # variable
 lambda_manual = np.exp(diagdJ_plus_GBetaB)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
