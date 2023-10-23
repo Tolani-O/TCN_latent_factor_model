@@ -345,12 +345,12 @@ class SpikeTrainModel:
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)
+        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)[:, np.newaxis]
         while ct < max_iters:
             d_plus = self.d + learning_rate * dlogL_dd
 
             # set up variables to compute loss
-            diagdJ_plus_GBetaB = self.d + GBetaBPsi
+            diagdJ_plus_GBetaB = d_plus + GBetaBPsi
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt
             # compute loss
             log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
@@ -485,7 +485,7 @@ class SpikeTrainModel:
 
         dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(L) - G[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
 
-        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)
+        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)[:, np.newaxis]
 
         return dlogL_dgamma, dlogL_dalpha, dlogL_dzeta, dlogL_dchi, dlogL_dd
 
@@ -500,7 +500,7 @@ class SpikeTrainModel:
             orig = variable[i, j]
             variable[i, j] = orig + eps
             loss_result = self.compute_loss_time_warping(tau_psi, tau_beta)
-            loss_eps = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
+            loss_eps = loss_result['likelihood']
             grad_chunk[j] = (loss_eps - loss) / eps
             variable[i, j] = orig
 
@@ -516,7 +516,7 @@ class SpikeTrainModel:
         R = self.trials
 
         loss_result = self.compute_loss_time_warping(tau_psi, tau_beta)
-        loss = loss_result['log_likelihood'] + loss_result['psi_penalty'] + loss_result['beta_penalty']
+        loss = loss_result['likelihood']
         pool = mp.Pool()
 
         # alpha gradient

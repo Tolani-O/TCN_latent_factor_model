@@ -3,40 +3,31 @@ from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
 
 def main_function():
-    self = DataAnalyzer().initialize()
-    binned, time = self.sample_data()
+    self = DataAnalyzer().initialize(K=100, R=3, max_offset=0)
+    binned, stim_time = self.sample_data()
 
     Y = binned  # K x T
     degree = 3
     L = self.latent_factors.shape[0] - 1
+    model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
     # Training hyperparameters
-    tau_psi = 80
-    tau_beta = 80
-    tau_G = 2
+    tau_psi = 1
+    tau_beta = 1
 
-    model = SpikeTrainModel(Y, time).initialize_for_time_warping(L, degree)
+    dgamma, dalpha, dzeta, dchi, dd = model.compute_analytical_grad_time_warping(tau_psi, tau_beta)
+    dgamma_num, dalpha_num, dzeta_num, dchi_num, dd_num = model.compute_numerical_grad_time_warping_parallel(tau_psi, tau_beta)
+    # account for constraints in dalpha and dzeta:
+    dalpha[:, 1] = 0
+    dzeta[:, 1] = 0
 
-    epoch = 0
-    for epoch in range(1):
-        dalpha, dgamma, dG, dd = model.compute_analytical_grad_time_warping(tau_psi, tau_beta)
-        dalpha_num, dgamma_num, dG_num, dd_num = model.compute_numerical_grad_time_warping_parallel(tau_psi, tau_beta, tau_G)
+    dgamma_error = np.max(np.abs(dgamma - dgamma_num))
+    dalpha_error = np.max(np.abs(dalpha - dalpha_num))
+    dzeta_error = np.max(np.abs(dzeta - dzeta_num))
+    dchi_error = np.max(np.abs(dchi - dchi_num))
+    dd_error = np.max(np.abs(dd - dd_num))
 
-        dalpha_error = np.mean(np.square(dalpha - dalpha_num))
-        dgamma_error = np.mean(np.square(dgamma - dgamma_num))
-        dG_error = np.mean(np.square(dG - dG_num))
-        dd_error = np.mean(np.square(dd - dd_num))
-
-        print(f"Epoch {epoch}, dalpha_error {dalpha_error}, dgamma_error {dgamma_error}, dG_error {dG_error}, dd_error {dd_error}")
-
-        # self.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_G)
-
+    print(f"Max Errors: dgamma {dgamma_error}, dalpha {dalpha_error}, dzeta {dzeta_error}, dchi {dchi_error}, dd {dd_error}")
 
 if __name__ == '__main__':
     main_function()
-
-
-# ideas for debugging:
-# 1. use B as B_psi and compute the gradients. They should be the same as the gradients computed without time warping.
-#       validate that the gradients of d, beta and G this way.
-# 2. Pass in the gradients into the function, compute the difference elementwise, and see where the difference is coming from
