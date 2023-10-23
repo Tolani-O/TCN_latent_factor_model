@@ -10,9 +10,10 @@ class DataAnalyzer:
         self.latent_factors = None
         self.intensity = None
         self.binned = None
+        self.trials = None
 
 
-    def initialize(self, K=100, T=200, seed=0, intensity_type=('constant', '1peak', '2peaks'), max_offset=0):
+    def initialize(self, K=100, T=200, R=3, seed=0, intensity_type=('constant', '1peak', '2peaks'), max_offset=0):
         time = np.arange(0, T, 1) / 100
         np.random.seed(seed)
         self.latent_factors = self.generate_latent_factors(time, intensity_type)
@@ -24,6 +25,7 @@ class DataAnalyzer:
                                                                  (1/3, 1/3, 1/3),
                                                                  K, max_offset)
         self.time = time
+        self.trials = R
         return self
 
     def generate_latent_factors(self, time, intensity_type):
@@ -93,7 +95,7 @@ class DataAnalyzer:
 
 
     def sample_data(self):
-        return self.binned, self.time
+        return np.hstack([self.binned] * self.trials), self.time
 
 
     def plot_intensity_and_latents(self):

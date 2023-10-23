@@ -6,7 +6,7 @@ from src.psplines_gradient_method.general_functions import plot_binned, plot_spi
 import matplotlib.pyplot as plt
 import time
 
-self = DataAnalyzer().initialize(K=200, max_offset=0)
+self = DataAnalyzer().initialize(K=100, R=3, max_offset=0)
 binned, stim_time = self.sample_data()
 binned_spikes = np.where(binned >= 1)
 # plot_spikes(binned_spikes)
@@ -23,23 +23,26 @@ model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 num_epochs = 1000
 
 # Training hyperparameters
-tau_psi = 5000
-tau_beta = 200
+tau_psi = 8000
+tau_beta = 600
 
-losses = []
+likelihoods = []
 
 alpha_loss_increase = []
 gamma_loss_increase = []
+zeta_loss_increase = []
 chi_loss_increase = []
 d_loss_increase = []
 
 alpha_learning_rate = []
 gamma_learning_rate = []
+zeta_learning_rate = []
 chi_learning_rate = []
 d_learning_rate = []
 
 alpha_iters = []
 gamma_iters = []
+zeta_iters = []
 chi_iters = []
 d_iters = []
 
@@ -49,28 +52,33 @@ for epoch in range(num_epochs):
     start_time = time.time()  # Record the start time of the epoch
 
     result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta)
-    loss = result["loss"]
+    likelihood = result["likelihood"]
     psi_penalty = result["psi_penalty"]
+    kappa_penalty = result["kappa_penalty"]
     beta_penalty = result["beta_penalty"]
     dalpha = result["dlogL_dalpha"]
     dgamma = result["dlogL_dgamma"]
+    dzeta = result["dlogL_dzeta"]
     dchi = result["dlogL_dchi"]
     dd = result["dlogL_dd"]
 
-    losses.append(loss)
+    likelihoods.append(likelihood)
 
     alpha_loss_increase.append(result["alpha_loss_increase"])
     gamma_loss_increase.append(result["gamma_loss_increase"])
+    zeta_loss_increase.append(result["zeta_loss_increase"])
     chi_loss_increase.append(result["chi_loss_increase"])
     d_loss_increase.append(result["d_loss_increase"])
 
     alpha_learning_rate.append(result["smooth_alpha"])
     gamma_learning_rate.append(result["smooth_gamma"])
+    zeta_learning_rate.append(result["smooth_zeta"])
     chi_learning_rate.append(result["smooth_chi"])
     d_learning_rate.append(result["smooth_d"])
 
     alpha_iters.append(result["iters_alpha"])
     gamma_iters.append(result["iters_gamma"])
+    zeta_iters.append(result["iters_zeta"])
     chi_iters.append(result["iters_chi"])
     d_iters.append(result["iters_d"])
 
@@ -80,11 +88,11 @@ for epoch in range(num_epochs):
     total_time += elapsed_time  # Calculate the total time for training
 
     if epoch % 100 == 0:
-        print(f"Epoch {epoch}, Likelihood {loss}, Epoch Time: {epoch_time/60:.2f} mins, Total Time: {total_time/(60*60):.2f} hrs")
+        print(f"Epoch {epoch}, Likelihood {likelihood}, Epoch Time: {epoch_time/60:.2f} mins, Total Time: {total_time/(60*60):.2f} hrs")
         epoch_time = 0  # Reset the epoch time
 
-num_epochs = len(losses)
-losses = np.array(losses)
+num_epochs = len(likelihoods)
+likelihoods = np.array(likelihoods)
 alpha_learning_rate = np.array(alpha_learning_rate)
 gamma_learning_rate = np.array(gamma_learning_rate)
 chi_learning_rate = np.array(chi_learning_rate)
@@ -93,7 +101,7 @@ alpha_iters = np.array(alpha_iters)
 gamma_iters = np.array(gamma_iters)
 chi_iters = np.array(chi_iters)
 d_iters = np.array(d_iters)
-plt.plot(np.arange(0, num_epochs), losses[0:])
+plt.plot(np.arange(0, num_epochs), likelihoods[0:])
 plt.title('Losses')
 plt.show()
 plt.plot(np.arange(0, num_epochs), alpha_learning_rate)
@@ -121,10 +129,16 @@ plt.plot(np.arange(0, num_epochs), d_iters)
 plt.title('d Iters')
 plt.show()
 
-exp_alpha_c = (np.exp(model.alpha) @ model.alpha_prime_multiply) + model.alpha_prime_add
-psi = exp_alpha_c @ model.U_psi
-psi_norm = (1 / (psi[:, (model.V.shape[0]-1), np.newaxis])) * psi
-time_matrix = max(model.time) * psi_norm @ model.V
+R, Q = model.zeta.shape
+K = model.d.shape[0]
+T = model.time.shape[0]
+exp_alpha_c = (np.exp(model.alpha) @ model.alpha_prime_multiply) + np.repeat(model.alpha_prime_add, K, axis=0)
+psi = exp_alpha_c @ model.U_ones  # variable
+psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # variable, called \psi' in the document
+exp_zeta_c = (np.exp(model.zeta) @ model.alpha_prime_multiply) + np.repeat(model.alpha_prime_add, R, axis=0)
+kappa = exp_zeta_c @ model.U_ones  # variable
+kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # variable, called \kappa' in the document
+time_matrix = 0.5 * max(model.time) * np.hstack([(psi_norm + kappa_norm[r]) @ model.V for r in range(R)])  # variable
 B_sparse = [BSpline.design_matrix(time, model.knots, model.degree).transpose() for time in time_matrix]
 beta = np.exp(model.gamma)
 exp_chi = np.exp(model.chi)
@@ -134,11 +148,8 @@ GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
 diagdJ_plus_GBetaB = model.d + GBetaBPsi  # variable
 lambda_manual = np.exp(diagdJ_plus_GBetaB)
 avg_lambda_manual = np.mean(lambda_manual, axis=0)
-plt.plot(stim_time, avg_lambda_manual)
-plt.show()
-np.mean(np.square(intensity - lambda_manual))
-for i in range(model.Y.shape[0]):
-    plt.plot(stim_time, lambda_manual[i, :] + i * 2)
+for i in range(R):
+    plt.plot(stim_time, avg_lambda_manual[i*T:(i+1)*T] + i * 2)
 plt.show()
 
 latent_factors_manual = beta @ model.V
@@ -148,8 +159,27 @@ for i in range(L):
     plt.title(f'Factor [{i}, :]')
 plt.show()
 
+time_matrix_psi = max(model.time) * (psi_norm @ model.V)
 for i in range(model.Y.shape[0]):
-    plt.plot(stim_time, time_matrix[i, :] + i * 0.01)
+    plt.plot(stim_time, time_matrix_psi[i, :] + i * 0.05)
+plt.show()
+time_matrix_kappa = max(model.time) * (kappa_norm @ model.V)
+for i in range(R):
+    plt.plot(stim_time, time_matrix_kappa[i, :] + i * 0.1)
+plt.show()
+
+B_sparse_kappa = [BSpline.design_matrix(time, model.knots, model.degree).transpose() for time in time_matrix_kappa]
+latent_factors_kappa = [beta @ b for b in B_sparse_kappa]
+r = 0
+for i in range(model.Y.shape[0]):
+    plt.plot(stim_time, time_matrix[i, r*T:(r+1)*T] + i * 0.01)
+plt.show()
+for i in range(model.Y.shape[0]):
+    plt.plot(stim_time, lambda_manual[i, r*T:(r+1)*T] + i * 2)
+plt.show()
+for i in range(L):
+    plt.plot(stim_time, latent_factors_kappa[r][i, :])
+    plt.title(f'Factor [{i}, :]')
 plt.show()
 
 G_and_d = np.concatenate([G, model.d], axis=1)
