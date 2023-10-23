@@ -257,12 +257,12 @@ class SpikeTrainModel:
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)
+        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)[:, np.newaxis]
         while ct < max_iters:
             d_plus = self.d + learning_rate * dlogL_dd
 
             # set up variables to compute loss
-            diagdJ_plus_GBetaB = self.d + GBetaBPsi
+            diagdJ_plus_GBetaB = d_plus + GBetaBPsi
             lambda_del_t = np.exp(diagdJ_plus_GBetaB) * self.dt
             # compute loss
             log_likelihood = np.sum(diagdJ_plus_GBetaB * self.Y - lambda_del_t)
@@ -369,7 +369,7 @@ class SpikeTrainModel:
 
         dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(self.gamma.shape[0]) - GBeta[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
 
-        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)
+        dlogL_dd = np.sum(y_minus_lambda_del_t, axis=1)[:, np.newaxis]
 
         return dlogL_dgamma, dlogL_dalpha, dlogL_dchi, dlogL_dd
 
