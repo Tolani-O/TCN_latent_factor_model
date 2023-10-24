@@ -23,8 +23,8 @@ model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 num_epochs = 1000
 
 # Training hyperparameters
-tau_psi = 5000
-tau_beta = 800
+tau_psi = 2000
+tau_beta = 1000
 
 likelihoods = []
 
