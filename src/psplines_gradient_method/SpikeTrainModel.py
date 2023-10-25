@@ -62,10 +62,8 @@ class SpikeTrainModel:
         self.gamma = np.random.rand(L, P)
         np.random.seed(0)
         self.d = np.random.rand(K, 1)
-        np.random.seed(0)
-        self.alpha = np.random.rand(K, Q)
-        np.random.seed(0)
-        self.zeta = np.random.rand(R, Q)
+        self.alpha = np.zeros((K, Q))
+        self.zeta = np.zeros((R, Q))
 
         return self
 
