@@ -36,7 +36,7 @@ def create_second_diff_matrix(P):
     return D
 
 
-def plot_spikes(spikes, x_offset=0):
+def plot_spikes(spikes, trials, x_offset=0):
     # Group entries by unique values of s[0]
     unique_s_0 = np.unique(spikes[0])
     grouped_s = []
@@ -44,7 +44,7 @@ def plot_spikes(spikes, x_offset=0):
         indices = np.where(spikes[0] == i)[0]
         values = (spikes[1][indices] - x_offset)/1000
         grouped_s.append((i, values))
-    plt.figure()
+    plt.figure(figsize=(8*trials, 10))
     for group in grouped_s:
         plt.scatter(group[1], np.zeros_like(group[1]) + group[0], s=1, c='black')
     plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_spikes.png'))

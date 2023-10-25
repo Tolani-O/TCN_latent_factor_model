@@ -13,10 +13,10 @@ class DataAnalyzer:
         self.trials = None
 
 
-    def initialize(self, K=100, T=200, R=3, seed=0, intensity_type=('constant', '1peak', '2peaks'), max_offset=0):
+    def initialize(self, K=100, T=200, R=3, seed=0, intensity_type=('constant', '1peak', '2peaks'), intensity_mltply=15, intensity_bias=5, max_offset=0):
         time = np.arange(0, T, 1) / 100
         np.random.seed(seed)
-        self.latent_factors = self.generate_latent_factors(time, intensity_type)
+        self.latent_factors = self.generate_latent_factors(time, intensity_type, intensity_mltply, intensity_bias)
         np.random.seed(seed)
         # might need to move coefficients and stuff to be passed in as parameters
         self.intensity, self.binned = self.generate_spike_trains(self.latent_factors,
@@ -28,7 +28,7 @@ class DataAnalyzer:
         self.trials = R
         return self
 
-    def generate_latent_factors(self, time, intensity_type):
+    def generate_latent_factors(self, time, intensity_type, intensity_mltply, intensity_bias):
 
         # intensity_type is a string
         if isinstance(intensity_type, str):
@@ -56,7 +56,7 @@ class DataAnalyzer:
                 rate[time >= 1.25] = np.sin(2 * np.pi * (time[time >= 1.25] - 1.25) / 0.75)
                 rate[time > 1.625] = 0
 
-            latent_factors[i, :] = 15 * rate + 5
+            latent_factors[i, :] = intensity_mltply * rate + intensity_bias
 
         return latent_factors
 
