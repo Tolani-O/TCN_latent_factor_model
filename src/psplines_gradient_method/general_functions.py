@@ -36,7 +36,7 @@ def create_second_diff_matrix(P):
     return D
 
 
-def plot_spikes(spikes, trials, x_offset=0):
+def plot_spikes(spikes, trials, output_dir, x_offset=0):
     # Group entries by unique values of s[0]
     unique_s_0 = np.unique(spikes[0])
     grouped_s = []
@@ -44,25 +44,25 @@ def plot_spikes(spikes, trials, x_offset=0):
         indices = np.where(spikes[0] == i)[0]
         values = (spikes[1][indices] - x_offset)/1000
         grouped_s.append((i, values))
-    plt.figure(figsize=(8*trials, 10))
+    plt.figure(figsize=(40*trials, (10/3)*trials))
     for group in grouped_s:
         plt.scatter(group[1], np.zeros_like(group[1]) + group[0], s=1, c='black')
-    plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_spikes.png'))
+    plt.savefig(os.path.join(output_dir, 'groundTruth_spikes.png'))
 
 
-def plot_binned(binned):
+def plot_binned(binned, output_dir):
     # plot binned spikes
     _, ax = plt.subplots()
     ax.imshow(binned)
     ax.invert_yaxis()
-    plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_binned.png'))
+    plt.savefig(os.path.join(output_dir, 'groundTruth_binned.png'))
 
 
-def plot_bsplines(B, time):
+def plot_bsplines(B, time, output_dir):
     # plot bsplines
     start = 190
     num_basis = 10
     plt.figure()
     for i in range(num_basis):
         plt.plot(time[start:(start+num_basis)], B[i+start, start:(start+num_basis)])
-    plt.savefig(os.path.join(os.getcwd(), 'outputs', 'groundTruth_bsplines.png'))
+    plt.savefig(os.path.join(output_dir, 'groundTruth_bsplines.png'))

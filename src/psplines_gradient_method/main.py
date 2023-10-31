@@ -7,17 +7,27 @@ from src.psplines_gradient_method.general_functions import plot_binned, plot_spi
 import matplotlib.pyplot as plt
 import time
 
-self = DataAnalyzer().initialize(K=200, R=15, intensity_mltply=25, intensity_bias=0.1, max_offset=0)
+K = 200
+R = 20
+L = 3
+intensity_mltply = 25
+intensity_bias = 0.1
+folder_name = f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_NoTimeWarp'
+output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
+self = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
 binned, stim_time = self.sample_data()
 intensity, latent_factors = self.intensity, self.latent_factors
 binned_spikes = np.where(binned >= 1)
-plot_binned(binned)
-plot_spikes(binned_spikes, 15)
-self.plot_intensity_and_latents()
+plot_binned(binned, output_dir)
+plot_spikes(binned_spikes, R, output_dir)
+self.plot_intensity_and_latents(output_dir)
 
 Y = binned  # K x T
 degree = 3
-L = self.latent_factors.shape[0] #- 1
+#L = self.latent_factors.shape[0] #- 1
 model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
 
 # Training parameters
@@ -33,19 +43,16 @@ alpha_loss_increase = []
 gamma_loss_increase = []
 zeta_loss_increase = []
 chi_loss_increase = []
-d_loss_increase = []
 
 alpha_learning_rate = []
 gamma_learning_rate = []
 zeta_learning_rate = []
 chi_learning_rate = []
-d_learning_rate = []
 
 alpha_iters = []
 gamma_iters = []
 zeta_iters = []
 chi_iters = []
-d_iters = []
 
 total_time = 0
 epoch_time = 0
@@ -61,7 +68,6 @@ for epoch in range(num_epochs):
     dgamma = result["dlogL_dgamma"]
     dzeta = result["dlogL_dzeta"]
     dchi = result["dlogL_dchi"]
-    dd = result["dlogL_dd"]
 
     likelihoods.append(likelihood)
 
@@ -69,19 +75,16 @@ for epoch in range(num_epochs):
     gamma_loss_increase.append(result["gamma_loss_increase"])
     zeta_loss_increase.append(result["zeta_loss_increase"])
     chi_loss_increase.append(result["chi_loss_increase"])
-    d_loss_increase.append(result["d_loss_increase"])
 
     alpha_learning_rate.append(result["smooth_alpha"])
     gamma_learning_rate.append(result["smooth_gamma"])
     zeta_learning_rate.append(result["smooth_zeta"])
     chi_learning_rate.append(result["smooth_chi"])
-    d_learning_rate.append(result["smooth_d"])
 
     alpha_iters.append(result["iters_alpha"])
     gamma_iters.append(result["iters_gamma"])
     zeta_iters.append(result["iters_zeta"])
     chi_iters.append(result["iters_chi"])
-    d_iters.append(result["iters_d"])
 
     end_time = time.time()  # Record the end time of the epoch
     elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
@@ -104,28 +107,29 @@ kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # variable, called \
 time_matrix = 0.5 * max(model.time) * np.hstack([(psi_norm + kappa_norm[r]) @ model.V for r in range(R)])  # variable
 B_sparse = [BSpline.design_matrix(time, model.knots, model.degree).transpose() for time in time_matrix]
 beta = np.exp(model.gamma)
+beta[(L-1), :] = 1
 exp_chi = np.exp(model.chi)
+exp_chi[:, 0] = 1
 G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi
 GBeta = G @ beta
 GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
 diagdJ_plus_GBetaB = model.d + GBetaBPsi  # variable
 lambda_intensities = np.exp(diagdJ_plus_GBetaB)
 avg_lambda_intensities = np.mean(lambda_intensities, axis=0)
-output_dir = os.getcwd()
 batch = 10
 
 plt.figure()
 for i in range(R):
     plt.plot(stim_time, avg_lambda_intensities[i*T:(i+1)*T] + i * 2)
-plt.savefig(os.path.join(output_dir, f'outputs/main_AvgLambdaIntensities.png'))
+plt.savefig(os.path.join(output_dir, f'main_AvgLambdaIntensities.png'))
 
 latent_factors = beta @ model.V
 plt.figure()
 for i in range(L):
     # plt.plot(np.concatenate([[stim_time[0] - 0.02, stim_time[0] - 0.01], stim_time]), model.beta[i, :])
-    plt.plot(stim_time, latent_factors[i, :])
-    plt.title(f'Factor [{i}, :]')
-plt.savefig(os.path.join(output_dir, f'outputs/main_LatentFactors.png'))
+    plt.plot(stim_time, latent_factors[i, :], label=f'Factor [{i}, :]')
+    plt.title(f'Factors')
+plt.savefig(os.path.join(output_dir, f'main_LatentFactors.png'))
 
 time_matrix_psi = max(model.time) * (psi_norm @ model.V)
 for i in range(0, model.Y.shape[0], batch):
@@ -133,13 +137,13 @@ for i in range(0, model.Y.shape[0], batch):
     plt.figure()
     for j in range(this_batch):
         plt.plot(stim_time, time_matrix_psi[i+j, :] + i * 0.05)
-    plt.savefig(os.path.join(output_dir, f'outputs/main_TimeMatrixPsi_batch{i}.png'))
+    plt.savefig(os.path.join(output_dir, f'main_TimeMatrixPsi_batch{i}.png'))
 
 time_matrix_kappa = max(model.time) * (kappa_norm @ model.V)
 plt.figure()
 for i in range(R):
     plt.plot(stim_time, time_matrix_kappa[i, :] + i * 0.1)
-plt.savefig(os.path.join(output_dir, f'outputs/main_TimeMatrixKappa.png'))
+plt.savefig(os.path.join(output_dir, f'main_TimeMatrixKappa.png'))
 
 B_sparse_kappa = [BSpline.design_matrix(time, model.knots, model.degree).transpose() for time in time_matrix_kappa]
 latent_factors_kappa = [beta @ b for b in B_sparse_kappa]
@@ -150,7 +154,7 @@ for r in range(1):
         plt.figure()
         for j in range(this_batch):
             plt.plot(stim_time, time_matrix[i+j, r*T:(r+1)*T] + i * 0.01)
-        plt.savefig(os.path.join(output_dir, f'outputs/main_TimeMatrix_Trial{r}_batch{i}.png'))
+        plt.savefig(os.path.join(output_dir, f'main_TimeMatrix_Trial{r}_batch{i}.png'))
 
         plt.figure(figsize=(10, 10))
         sorted_indices = sorted(range(this_batch), key=lambda j: np.argmax(G[i+j]), reverse=True)
@@ -165,13 +169,13 @@ for r in range(1):
         plt.subplot(2, 1, 2)
         plt.legend()
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f'outputs/main_LambdaIntensities_Trial{r}_batch{i}.png'))
+        plt.savefig(os.path.join(output_dir, f'main_LambdaIntensities_Trial{r}_batch{i}.png'))
 
     plt.figure()
     for i in range(L):
         plt.plot(stim_time, latent_factors_kappa[r][i, :])
         plt.title(f'Factor [{i}, :]')
-    plt.savefig(os.path.join(output_dir, f'outputs/main_LatentFactorsKappa_Trial{r}.png'))
+    plt.savefig(os.path.join(output_dir, f'main_LatentFactorsKappa_Trial{r}.png'))
 
 plt.close()
 plt.show()
