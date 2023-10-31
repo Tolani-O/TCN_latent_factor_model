@@ -7,8 +7,8 @@ from src.psplines_gradient_method.general_functions import plot_binned, plot_spi
 import matplotlib.pyplot as plt
 import time
 
-K = 200
-R = 20
+K = 100
+R = 15
 L = 3
 intensity_mltply = 25
 intensity_bias = 0.1
@@ -96,7 +96,7 @@ for epoch in range(num_epochs):
         epoch_time = 0  # Reset the epoch time
 
 R, Q = model.zeta.shape
-K = model.d.shape[0]
+K = model.Y.shape[0]
 T = model.time.shape[0]
 exp_alpha_c = (np.exp(model.alpha) @ model.alpha_prime_multiply) + np.repeat(model.alpha_prime_add, K, axis=0)
 psi = exp_alpha_c @ model.U_ones  # variable
@@ -113,14 +113,12 @@ exp_chi[:, 0] = 1
 G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi
 GBeta = G @ beta
 GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
-diagdJ_plus_GBetaB = model.d + GBetaBPsi  # variable
-lambda_intensities = np.exp(diagdJ_plus_GBetaB)
-avg_lambda_intensities = np.mean(lambda_intensities, axis=0)
+avg_lambda_intensities = np.mean(GBetaBPsi, axis=0)
 batch = 10
 
 plt.figure()
 for i in range(R):
-    plt.plot(stim_time, avg_lambda_intensities[i*T:(i+1)*T] + i * 2)
+    plt.plot(stim_time, avg_lambda_intensities[i*T:(i+1)*T] + i * 0.01)
 plt.savefig(os.path.join(output_dir, f'main_AvgLambdaIntensities.png'))
 
 latent_factors = beta @ model.V
@@ -160,7 +158,7 @@ for r in range(1):
         sorted_indices = sorted(range(this_batch), key=lambda j: np.argmax(G[i+j]), reverse=True)
         for k, j in enumerate(sorted_indices):
             plt.subplot(2, 1, 1)
-            plt.plot(stim_time, lambda_intensities[i+j, r*T:(r+1)*T] + k*0.0,
+            plt.plot(stim_time, GBetaBPsi[i+j, r*T:(r+1)*T] + k*0.0,
                      label=f'I={i+j}, C={np.argmax(G[i+j])}, V={round(np.max(G[i+j]),2)}')
             plt.subplot(2, 1, 2)
             plt.plot(stim_time, intensity[i+j, :] + k * 0.1, label=f'I={i + j}')
@@ -187,11 +185,9 @@ likelihoods = np.array(likelihoods)
 alpha_learning_rate = np.array(alpha_learning_rate)
 gamma_learning_rate = np.array(gamma_learning_rate)
 chi_learning_rate = np.array(chi_learning_rate)
-d_learning_rate = np.array(d_learning_rate)
 alpha_iters = np.array(alpha_iters)
 gamma_iters = np.array(gamma_iters)
 chi_iters = np.array(chi_iters)
-d_iters = np.array(d_iters)
 plt.plot(np.arange(0, num_epochs), likelihoods[0:])
 plt.title('Losses')
 plt.show()
@@ -204,9 +200,6 @@ plt.show()
 plt.plot(np.arange(0, num_epochs), chi_learning_rate)
 plt.title('G Learning Rates')
 plt.show()
-plt.plot(np.arange(0, num_epochs), d_learning_rate)
-plt.title('d Learning Rates')
-plt.show()
 plt.plot(np.arange(0, num_epochs), alpha_iters)
 plt.title('Alpha Iters')
 plt.show()
@@ -215,7 +208,4 @@ plt.title('Beta Iters')
 plt.show()
 plt.plot(np.arange(0, num_epochs), chi_iters)
 plt.title('G Iters')
-plt.show()
-plt.plot(np.arange(0, num_epochs), d_iters)
-plt.title('d Iters')
 plt.show()

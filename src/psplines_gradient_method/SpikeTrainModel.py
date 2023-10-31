@@ -91,11 +91,15 @@ class SpikeTrainModel:
         G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-        lambda_del_t = np.exp(GBetaBPsi) * self.dt  # variable
+        lambda_del_t = GBetaBPsi * self.dt  # variable
         # compute loss
-        log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
-        psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
-        kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
+        log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
+        if time_warping:
+            psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
+            kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
+        else:
+            psi_penalty = 0
+            kappa_penalty = 0
         beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
         loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
         loss_0 = loss
@@ -103,8 +107,8 @@ class SpikeTrainModel:
         # smooth_gamma
         ct = 0
         learning_rate = 1
-        y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dgamma = beta * (G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
+        lambdainv_y_minus_del_t = 1/(GBetaBPsi) * self.Y - self.dt
+        dlogL_dgamma = beta * (G.T @ np.vstack([lambdainv_y_minus_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
                                2 * tau_beta * beta @ self.Omega_beta_B)
         while ct < max_iters:
             gamma_plus = self.gamma + learning_rate * dlogL_dgamma
@@ -114,9 +118,9 @@ class SpikeTrainModel:
             beta[(L-1), :] = 1
             GBeta = G @ beta
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
-            lambda_del_t = np.exp(GBetaBPsi) * self.dt
+            lambda_del_t = GBetaBPsi * self.dt
             # compute loss
-            log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
+            log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
             beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
             loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
 
@@ -152,7 +156,7 @@ class SpikeTrainModel:
         # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-        lambda_del_t = np.exp(GBetaBPsi) * self.dt  # variable
+        lambda_del_t = GBetaBPsi * self.dt  # variable
         # compute updated penalty
         beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
 
@@ -181,9 +185,9 @@ class SpikeTrainModel:
                 time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
                 B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]
                 GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-                lambda_del_t = np.exp(GBetaBPsi) * self.dt
+                lambda_del_t = GBetaBPsi * self.dt
                 # compute loss
-                log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
+                log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
                 psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
                 loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
 
@@ -219,7 +223,7 @@ class SpikeTrainModel:
             # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
             # GBeta = G @ beta  # didnt change
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-            lambda_del_t = np.exp(GBetaBPsi) * self.dt
+            lambda_del_t = GBetaBPsi * self.dt
             # compute updated penalty
             psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
 
@@ -247,9 +251,9 @@ class SpikeTrainModel:
                 time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
                 B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]
                 GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-                lambda_del_t = np.exp(GBetaBPsi) * self.dt
+                lambda_del_t = GBetaBPsi * self.dt
                 # compute loss
-                log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
+                log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
                 kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
                 loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
 
@@ -285,7 +289,7 @@ class SpikeTrainModel:
             # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
             # GBeta = G @ beta  # didnt change
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-            lambda_del_t = np.exp(GBetaBPsi) * self.dt
+            lambda_del_t = GBetaBPsi * self.dt
             # compute updated penalty
             kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
         else:
@@ -301,8 +305,9 @@ class SpikeTrainModel:
         # smooth_chi
         ct = 0
         learning_rate = 1
-        y_minus_lambda_del_t = self.Y - lambda_del_t
-        dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(L) - G[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
+        lambdainv = 1 / (GBetaBPsi)
+        beta_Bpsi = [beta @ b for k, b in enumerate(B_sparse)]
+        dlogL_dchi = G * np.vstack([np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1) for k in range(K)])
         while ct < max_iters:
             chi_plus = self.chi + learning_rate * dlogL_dchi
 
@@ -312,9 +317,9 @@ class SpikeTrainModel:
             G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
             GBeta = G @ beta  # didnt change
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-            lambda_del_t = np.exp(GBetaBPsi) * self.dt
+            lambda_del_t = GBetaBPsi * self.dt
             # compute loss
-            log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
+            log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
             loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
@@ -381,9 +386,9 @@ class SpikeTrainModel:
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-        lambda_del_t = np.exp(GBetaBPsi) * self.dt  # variable
+        lambda_del_t = GBetaBPsi * self.dt  # variable
         # compute loss
-        log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
+        log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
         psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
         kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
         beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
@@ -420,7 +425,7 @@ class SpikeTrainModel:
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-        lambda_del_t = np.exp(GBetaBPsi) * self.dt  # variable
+        lambda_del_t = GBetaBPsi * self.dt  # variable
         # compute gradients
         y_minus_lambda_del_t = self.Y - lambda_del_t
         knots_Bpsinminus1_1 = [(self.knots_1 * BSpline.design_matrix(time, self.knots[:-1], (self.degree - 1)).transpose()).tocsc() for time in time_matrix]
@@ -430,8 +435,9 @@ class SpikeTrainModel:
         psi_norm_Omega = psi_norm @ self.Omega_psi_B
         kappa_norm_Omega = kappa_norm @ self.Omega_psi_B
 
-        dlogL_dgamma = beta * (G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
-                               2 * tau_beta * beta @ self.Omega_beta_B)
+        lambdainv_y_minus_del_t = 1 / (GBetaBPsi) * self.Y - self.dt
+        dlogL_dgamma = beta * (G.T @ np.vstack([lambdainv_y_minus_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
+                    2 * tau_beta * beta @ self.Omega_beta_B)
 
         dlogL_dalpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c * np.vstack([0.5 * max(self.time) * self.degree * np.sum(
                 GBetaBPsiDerivXyLambda * ((self.U_ones[q] - psi_norm) @ hstack([self.V] * R)), axis=1) -
@@ -443,8 +449,10 @@ class SpikeTrainModel:
                 2 * tau_psi * np.sum(kappa_norm_Omega * (self.U_ones[q] - kappa_norm), axis=1)
                 for q in range(Q)]).T
 
-        dlogL_dchi = np.vstack([y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(L) - G[k]) @ beta @ b).T for k, b in enumerate(B_sparse)])
-
+        lambdainv = 1 / (GBetaBPsi)
+        beta_Bpsi = [beta @ b for k, b in enumerate(B_sparse)]
+        dlogL_dchi = G * np.vstack([np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1)
+                                    for k in range(K)])
         return dlogL_dgamma, dlogL_dalpha, dlogL_dzeta, dlogL_dchi
 
     def compute_grad_chunk(self, name, variable, i, eps, tau_psi, tau_beta, loss):
