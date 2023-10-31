@@ -96,19 +96,3 @@ class DataAnalyzer:
 
     def sample_data(self):
         return np.hstack([self.binned] * self.trials), self.time
-
-
-    def plot_intensity_and_latents(self, output_dir):
-
-        time, latent_factors, intensity = self.time, self.latent_factors, self.intensity
-        # plot latent factors
-        plt.figure()
-        for i in range(latent_factors.shape[0]):
-            plt.plot(time, latent_factors[i, :] + i)
-        plt.savefig(os.path.join(output_dir, 'groundTruth_latent_factors.png'))
-
-        # plot neuron intensities
-        plt.figure()
-        for i in range(intensity.shape[0]):
-            plt.plot(time, intensity[i, :] + i * 0.1)
-        plt.savefig(os.path.join(output_dir, 'groundTruth_intensities.png'))

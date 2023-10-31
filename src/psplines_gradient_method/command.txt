@@ -1,0 +1,4 @@
+
+python src/psplines_gradient_method/controller.py b9c72d6c "python src/psplines_gradient_method/main.py --K 100 --R 15 --L 3 --tau_beta 1000"
+
+python src/psplines_gradient_method/controller.py 81bb876b "python src/psplines_gradient_method/main.py --K 100 --R 15 --L 3 --tau_beta 500"

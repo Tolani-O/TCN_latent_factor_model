@@ -76,31 +76,20 @@ class SpikeTrainModel:
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)
-        psi = exp_alpha_c @ self.U_ones  # variable
-        psi_norm = (1 / (psi[:, (Q-1), np.newaxis])) * psi  # variable, called \psi' in the document
-        exp_zeta_c = (np.exp(self.zeta) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, R, axis=0)
-        kappa = exp_zeta_c @ self.U_ones  # variable
-        kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # variable, called \kappa' in the document
-        time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
-        B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # variable
-        beta = np.exp(self.gamma)  # variable
-        beta[(L-1), :] = 1  # variable. Adding intercept term for latent factors
-        exp_chi = np.exp(self.chi)  # variable
-        exp_chi[:, 0] = 1
-        G = (1/np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-        GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-        lambda_del_t = GBetaBPsi * self.dt  # variable
-        # compute loss
-        log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
-        if time_warping:
-            psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
-            kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
-        else:
-            psi_penalty = 0
-            kappa_penalty = 0
-        beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
+        B_sparse = objects["B_sparse"]
+        G = objects["G"]
+        GBetaBPsi = objects["GBetaBPsi"]
+        beta = objects["beta"]
+        exp_alpha_c = objects["exp_alpha_c"]
+        exp_zeta_c = objects["exp_zeta_c"]
+        kappa_norm = objects["kappa_norm"]
+        psi_norm = objects["psi_norm"]
+        time_matrix = objects["time_matrix"]
+        log_likelihood = objects["log_likelihood"]
+        psi_penalty = objects["psi_penalty"]
+        kappa_penalty = objects["kappa_penalty"]
+        beta_penalty = objects["beta_penalty"]
         loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
         loss_0 = loss
 
@@ -141,19 +130,8 @@ class SpikeTrainModel:
         loss_gamma = loss
 
         # set up variables to compute loss in next round
-        # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)  # didnt change
-        # psi = exp_alpha_c @ self.U_ones  # didnt change
-        # psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # didnt change, called \psi' in the document
-        # exp_zeta_c = (np.exp(self.zeta) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, R, axis=0)  # didnt change
-        # kappa = exp_zeta_c @ self.U_ones  # didnt change
-        # kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # didnt change, called \kappa' in the document
-        # time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # didnt change
-        # B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # didnt change
         beta = np.exp(self.gamma)  # now fixed
         beta[(L-1), :] = 1  # now fixed
-        # exp_chi = np.exp(self.chi)  # didnt change
-        # exp_chi[:, 0] = 1 # didnt change
-        # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         lambda_del_t = GBetaBPsi * self.dt  # variable
@@ -211,17 +189,8 @@ class SpikeTrainModel:
             exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)  # now fixed
             psi = exp_alpha_c @ self.U_ones  # now fixed
             psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # now fixed, called \psi' in the document
-            # exp_zeta_c = (np.exp(self.zeta) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, R, axis=0)  # didnt change
-            # kappa = exp_zeta_c @ self.U_ones  # didnt change
-            # kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # didnt change, called \kappa' in the document
             time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
             B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # variable
-            # beta = np.exp(self.gamma)  # now fixed
-            # beta[(L - 1), :] = 1  # now fixed
-            # exp_chi = np.exp(self.chi)  # didnt change
-            # exp_chi[:, 0] = 1 # didnt change
-            # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
-            # GBeta = G @ beta  # didnt change
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
             lambda_del_t = GBetaBPsi * self.dt
             # compute updated penalty
@@ -274,22 +243,12 @@ class SpikeTrainModel:
             loss_zeta = loss
 
             # set up variables to compute loss in next round
-            # exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)  # now fixed
-            # psi = exp_alpha_c @ self.U_ones  # now fixed
-            # psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # now fixed, called \psi' in the document
             exp_zeta_c = (np.exp(self.zeta) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, R, axis=0)  # now fixed
             kappa = exp_zeta_c @ self.U_ones  # now fixed
             kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # now fixed, called \kappa' in the document
             time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # now fixed
             B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # now fixed
-            # beta = np.exp(self.gamma)  # now fixed
-            # beta[(L - 1), :] = 1  # now fixed
-            # exp_chi = np.exp(self.chi)  # didnt change
-            # exp_chi[:, 0] = 1 # didnt change
-            # G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # didnt change
-            # GBeta = G @ beta  # didnt change
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-            lambda_del_t = GBetaBPsi * self.dt
             # compute updated penalty
             kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
         else:
@@ -363,14 +322,7 @@ class SpikeTrainModel:
 
         return result
 
-    def compute_loss_time_warping(self, tau_psi, tau_beta):
-
-        # define parameters
-        K, Q = self.alpha.shape
-        L = self.gamma.shape[0]
-        R = self.trials
-
-        # set up variables to compute loss
+    def compute_prelim_objects(self, K, L, Q, R, tau_psi, tau_beta, time_warping):
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)
         psi = exp_alpha_c @ self.U_ones  # variable
         psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # variable, called \psi' in the document
@@ -380,18 +332,53 @@ class SpikeTrainModel:
         time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
         B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # variable
         beta = np.exp(self.gamma)  # variable
-        beta[(L-1), :] = 1  # variable
+        beta[(L - 1), :] = 1  # variable. Adding intercept term for latent factors
         exp_chi = np.exp(self.chi)  # variable
-        exp_chi[:, 0] = 1  # variable
+        exp_chi[:, 0] = 1
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         lambda_del_t = GBetaBPsi * self.dt  # variable
-        # compute loss
         log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
-        psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
-        kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
+        if time_warping:
+            psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
+            kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
+        else:
+            psi_penalty = 0
+            kappa_penalty = 0
         beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
+
+        result = {
+            "B_sparse": B_sparse,
+            "G": G,
+            "GBeta": GBeta,
+            "GBetaBPsi": GBetaBPsi,
+            "lambda_del_t": lambda_del_t,
+            "beta": beta,
+            "exp_alpha_c": exp_alpha_c,
+            "exp_zeta_c": exp_zeta_c,
+            "kappa_norm": kappa_norm,
+            "psi_norm": psi_norm,
+            "time_matrix": time_matrix,
+            "log_likelihood": log_likelihood,
+            "psi_penalty": psi_penalty,
+            "kappa_penalty": kappa_penalty,
+            "beta_penalty": beta_penalty
+        }
+        return result
+
+    def compute_loss_time_warping(self, tau_psi, tau_beta, time_warping=False):
+
+        # define parameters
+        K, Q = self.alpha.shape
+        L = self.gamma.shape[0]
+        R = self.trials
+
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
+        log_likelihood = objects["log_likelihood"]
+        psi_penalty = objects["psi_penalty"]
+        kappa_penalty = objects["kappa_penalty"]
+        beta_penalty = objects["beta_penalty"]
         loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
 
         result = {
@@ -402,7 +389,7 @@ class SpikeTrainModel:
         }
         return result
 
-    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta):
+    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta, time_warping=False):
 
         # define parameters
         K, L = self.chi.shape
@@ -410,49 +397,49 @@ class SpikeTrainModel:
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)
-        psi = exp_alpha_c @ self.U_ones  # variable
-        psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # variable, called \psi' in the document
-        exp_zeta_c = (np.exp(self.zeta) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, R, axis=0)
-        kappa = exp_zeta_c @ self.U_ones  # variable
-        kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # variable, called \kappa' in the document
-        time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
-        B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # variable
-        beta = np.exp(self.gamma)  # variable
-        beta[(L-1), :] = 1  # variable
-        exp_chi = np.exp(self.chi)  # variable
-        exp_chi[:, 0] = 1  # variable
-        G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-        GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-        lambda_del_t = GBetaBPsi * self.dt  # variable
-        # compute gradients
-        y_minus_lambda_del_t = self.Y - lambda_del_t
-        knots_Bpsinminus1_1 = [(self.knots_1 * BSpline.design_matrix(time, self.knots[:-1], (self.degree - 1)).transpose()).tocsc() for time in time_matrix]
-        knots_Bpsinminus1_2 = [vstack([b_deriv[1:], csr_array((1, R * T))]).tocsc() for b_deriv in knots_Bpsinminus1_1]
-        GBetaBPsiDeriv = np.vstack([GBeta[k] @ (knots_Bpsinminus1_1[k] - knots_Bpsinminus1_2[k]) for k in range(K)])
-        GBetaBPsiDerivXyLambda = GBetaBPsiDeriv * y_minus_lambda_del_t
-        psi_norm_Omega = psi_norm @ self.Omega_psi_B
-        kappa_norm_Omega = kappa_norm @ self.Omega_psi_B
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
+        B_sparse = objects["B_sparse"]
+        G = objects["G"]
+        GBetaBPsi = objects["GBetaBPsi"]
+        GBeta = objects["GBeta"]
+        beta = objects["beta"]
+        exp_alpha_c = objects["exp_alpha_c"]
+        exp_zeta_c = objects["exp_zeta_c"]
+        kappa_norm = objects["kappa_norm"]
+        psi_norm = objects["psi_norm"]
+        time_matrix = objects["time_matrix"]
+        lambda_del_t = objects["lambda_del_t"]
 
+        # compute gradients
         lambdainv_y_minus_del_t = 1 / (GBetaBPsi) * self.Y - self.dt
         dlogL_dgamma = beta * (G.T @ np.vstack([lambdainv_y_minus_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
                     2 * tau_beta * beta @ self.Omega_beta_B)
 
-        dlogL_dalpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c * np.vstack([0.5 * max(self.time) * self.degree * np.sum(
-                GBetaBPsiDerivXyLambda * ((self.U_ones[q] - psi_norm) @ hstack([self.V] * R)), axis=1) -
-                2 * tau_psi * np.sum(psi_norm_Omega * (self.U_ones[q] - psi_norm), axis=1)
-                for q in range(Q)]).T
+        if time_warping:
+            y_minus_lambda_del_t = self.Y - lambda_del_t
+            knots_Bpsinminus1_1 = [(self.knots_1 * BSpline.design_matrix(time, self.knots[:-1], (self.degree - 1)).transpose()).tocsc() for time in time_matrix]
+            knots_Bpsinminus1_2 = [vstack([b_deriv[1:], csr_array((1, R * T))]).tocsc() for b_deriv in knots_Bpsinminus1_1]
+            GBetaBPsiDeriv = np.vstack([GBeta[k] @ (knots_Bpsinminus1_1[k] - knots_Bpsinminus1_2[k]) for k in range(K)])
+            GBetaBPsiDerivXyLambda = GBetaBPsiDeriv * y_minus_lambda_del_t
+            psi_norm_Omega = psi_norm @ self.Omega_psi_B
+            kappa_norm_Omega = kappa_norm @ self.Omega_psi_B
+            dlogL_dalpha = psi_norm[:, 1, np.newaxis] * exp_alpha_c * np.vstack([0.5 * max(self.time) * self.degree * np.sum(
+                    GBetaBPsiDerivXyLambda * ((self.U_ones[q] - psi_norm) @ hstack([self.V] * R)), axis=1) -
+                    2 * tau_psi * np.sum(psi_norm_Omega * (self.U_ones[q] - psi_norm), axis=1)
+                    for q in range(Q)]).T
 
-        dlogL_dzeta = kappa_norm[:, 1, np.newaxis] * exp_zeta_c * np.vstack([0.5 * max(self.time) * self.degree *
-                np.sum(np.sum(GBetaBPsiDerivXyLambda * ((self.U_ones[q] - kappa_norm) @ self.V).flatten(), axis=0).reshape((R, T)), axis=1) -
-                2 * tau_psi * np.sum(kappa_norm_Omega * (self.U_ones[q] - kappa_norm), axis=1)
-                for q in range(Q)]).T
+            dlogL_dzeta = kappa_norm[:, 1, np.newaxis] * exp_zeta_c * np.vstack([0.5 * max(self.time) * self.degree *
+                    np.sum(np.sum(GBetaBPsiDerivXyLambda * ((self.U_ones[q] - kappa_norm) @ self.V).flatten(), axis=0).reshape((R, T)), axis=1) -
+                    2 * tau_psi * np.sum(kappa_norm_Omega * (self.U_ones[q] - kappa_norm), axis=1)
+                    for q in range(Q)]).T
+        else:
+            dlogL_dalpha = 0
+            dlogL_dzeta = 0
 
         lambdainv = 1 / (GBetaBPsi)
         beta_Bpsi = [beta @ b for k, b in enumerate(B_sparse)]
-        dlogL_dchi = G * np.vstack([np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1)
-                                    for k in range(K)])
+        dlogL_dchi = G * np.vstack([np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1) for k in range(K)])
+
         return dlogL_dgamma, dlogL_dalpha, dlogL_dzeta, dlogL_dchi
 
     def compute_grad_chunk(self, name, variable, i, eps, tau_psi, tau_beta, loss):
@@ -474,7 +461,7 @@ class SpikeTrainModel:
 
         return grad_chunk
 
-    def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta):
+    def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta, time_warping=False):
 
         eps = 1e-4
         # define parameters
@@ -488,11 +475,12 @@ class SpikeTrainModel:
         # alpha gradient
         alpha_async_results = [pool.apply_async(self.compute_grad_chunk, args=('alpha', self.alpha, k, eps, tau_psi, tau_beta, loss)) for k in range(K)]
 
-        # zeta gradient
-        zeta_async_results = [pool.apply_async(self.compute_grad_chunk, args=('zeta', self.zeta, r, eps, tau_psi, tau_beta, loss)) for r in range(R)]
+        if time_warping:
+            # zeta gradient
+            zeta_async_results = [pool.apply_async(self.compute_grad_chunk, args=('zeta', self.zeta, r, eps, tau_psi, tau_beta, loss)) for r in range(R)]
 
-        # gamma gradient
-        gamma_async_results = [pool.apply_async(self.compute_grad_chunk, args=('gamma', self.gamma, l, eps, tau_psi, tau_beta, loss)) for l in range(L)]
+            # gamma gradient
+            gamma_async_results = [pool.apply_async(self.compute_grad_chunk, args=('gamma', self.gamma, l, eps, tau_psi, tau_beta, loss)) for l in range(L)]
 
         # chi gradient
         chi_async_results = [pool.apply_async(self.compute_grad_chunk, args=('chi', self.chi, k, eps, tau_psi, tau_beta, loss)) for k in range(K)]
@@ -501,8 +489,12 @@ class SpikeTrainModel:
         pool.join()
 
         alpha_grad = np.vstack([r.get() for r in alpha_async_results])
-        zeta_grad = np.vstack([r.get() for r in zeta_async_results])
-        gamma_grad = np.vstack([r.get() for r in gamma_async_results])
+        if time_warping:
+            zeta_grad = np.vstack([r.get() for r in zeta_async_results])
+            gamma_grad = np.vstack([r.get() for r in gamma_async_results])
+        else:
+            zeta_grad = 0
+            gamma_grad = 0
         chi_grad = np.vstack([r.get() for r in chi_async_results])
 
         return gamma_grad, alpha_grad, zeta_grad, chi_grad
