@@ -60,7 +60,6 @@ class SpikeTrainModel:
         self.chi = np.random.rand(K, L)
         np.random.seed(0)
         self.gamma = np.random.rand(L, P)
-        np.random.seed(0)
         self.alpha = np.zeros((K, Q))
         self.zeta = np.zeros((R, Q))
 
@@ -400,7 +399,6 @@ class SpikeTrainModel:
         objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
         B_sparse = objects["B_sparse"]
         G = objects["G"]
-        GBetaBPsi = objects["GBetaBPsi"]
         GBeta = objects["GBeta"]
         beta = objects["beta"]
         exp_alpha_c = objects["exp_alpha_c"]

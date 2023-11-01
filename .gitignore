@@ -1,6 +1,6 @@
-/brain_observatory_examples/
-/data/
-/outputs/
+brain_observatory_examples/
+data/
+outputs/
 discard/
-/.idea/*
+.idea/*
 __pycache__/
