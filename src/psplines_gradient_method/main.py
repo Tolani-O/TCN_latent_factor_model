@@ -123,10 +123,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run the Python script from the command line.')
 
     parser.add_argument('--tau_psi', type=int, default=10000, help='Value for tau_psi')
-    parser.add_argument('--tau_beta', type=int, default=8000, help='Value for tau_beta')
-    parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs')
+    parser.add_argument('--tau_beta', type=int, default=5000, help='Value for tau_beta')
+    parser.add_argument('--num_epochs', type=int, default=10000, help='Number of training epochs')
     parser.add_argument('--K', type=int, default=100, help='Number of neurons')
-    parser.add_argument('--R', type=int, default=1, help='Number of trials')
+    parser.add_argument('--R', type=int, default=15, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
     parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
     parser.add_argument('--intensity_bias', type=float, default=0.1, help='Latent factor intensity bias')
