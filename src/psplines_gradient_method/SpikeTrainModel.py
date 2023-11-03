@@ -52,7 +52,7 @@ class SpikeTrainModel:
         self.alpha_prime_add = np.zeros((1, Q))
         self.alpha_prime_add[:, 1] = 1
         self.U_ones = np.triu(np.ones((Q, Q)))
-        self.Omega_beta_B = csr_array(create_first_diff_matrix(T)) @ self.V.T
+        self.Omega_beta_B = csr_array(create_second_diff_matrix(T)) @ self.V.T
         self.Omega_psi_B = self.Omega_beta_B
 
         # variables
