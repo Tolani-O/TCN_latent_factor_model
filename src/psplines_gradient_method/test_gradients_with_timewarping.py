@@ -15,21 +15,23 @@ def main_function():
     tau_psi = 1
     tau_beta = 1
 
-    dgamma, dalpha, dzeta, dchi = model.compute_analytical_grad_time_warping(tau_psi, tau_beta)
-    dgamma_num, dalpha_num, dzeta_num, dchi_num = model.compute_numerical_grad_time_warping_parallel(tau_psi, tau_beta)
+    dgamma, dd1, dd2, dalpha, dzeta, dchi = model.compute_analytical_grad_time_warping(tau_psi, tau_beta)
+    dgamma_num, dd1_num, dd2_num, dalpha_num, dzeta_num, dchi_num = model.compute_numerical_grad_time_warping_parallel(tau_psi, tau_beta)
     # account for constraints in dalpha and dzeta:
-    dalpha[:, 1] = 0
-    dzeta[:, 1] = 0
-    dgamma[(L - 1), :] = 0
+    dalpha[:, 1] = 0 # might need to fix dalpha[:, 0] = 0 as well
+    dzeta[:, 1] = 0 # might need to fix dzeta[:, 0] = 0 as well
+    # dgamma[(L - 1), :] = 0 # no longee fixing constant latent factor
     dchi[:, 0] = 0
 
 
     dgamma_error = np.max(np.abs(dgamma - dgamma_num))
+    dd1_error = np.max(np.abs(dd1 - dd1_num))
+    dd2_error = np.max(np.abs(dd2 - dd2_num))
     dalpha_error = np.max(np.abs(dalpha - dalpha_num))
     dzeta_error = np.max(np.abs(dzeta - dzeta_num))
     dchi_error = np.max(np.abs(dchi - dchi_num))
 
-    print(f"Max Errors: dgamma {dgamma_error}, dalpha {dalpha_error}, dzeta {dzeta_error}, dchi {dchi_error}")
+    print(f"Max Errors: dgamma {dgamma_error}, dd1 {dd1_error}, dd2 {dd2_error}, dalpha {dalpha_error}, dzeta {dzeta_error}, dchi {dchi_error}")
 
 if __name__ == '__main__':
     main_function()

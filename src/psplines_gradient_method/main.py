@@ -10,7 +10,7 @@ import time
 import argparse
 
 
-def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epochs):
+def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, num_epochs):
     # K = 100
     # R = 15
     # L = 3
@@ -21,7 +21,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epoch
     # tau_beta = 8000
     # num_epochs = 1000
 
-    folder_name = f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_tauBeta{tau_beta}_iters{num_epochs}_reparam'
+    folder_name = f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_reparam'
     output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -40,14 +40,20 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epoch
     likelihoods = []
     alpha_loss_increase = []
     gamma_loss_increase = []
+    d1_loss_increase = []
+    d2_loss_increase = []
     zeta_loss_increase = []
     chi_loss_increase = []
     alpha_learning_rate = []
     gamma_learning_rate = []
+    d1_learning_rate = []
+    d2_learning_rate = []
     zeta_learning_rate = []
     chi_learning_rate = []
     alpha_iters = []
     gamma_iters = []
+    d1_iters = []
+    d2_iters = []
     zeta_iters = []
     chi_iters = []
     total_time = 0
@@ -55,22 +61,28 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epoch
     for epoch in range(num_epochs):
         start_time = time.time()  # Record the start time of the epoch
 
-        result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta)
+        result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_s)
         likelihood = result["likelihood"]
         likelihoods.append(likelihood)
 
         alpha_loss_increase.append(result["alpha_loss_increase"])
         gamma_loss_increase.append(result["gamma_loss_increase"])
+        d1_loss_increase.append(result["d1_loss_increase"])
+        d2_loss_increase.append(result["d2_loss_increase"])
         zeta_loss_increase.append(result["zeta_loss_increase"])
         chi_loss_increase.append(result["chi_loss_increase"])
 
         alpha_learning_rate.append(result["smooth_alpha"])
         gamma_learning_rate.append(result["smooth_gamma"])
+        d1_learning_rate.append(result["smooth_d1"])
+        d2_learning_rate.append(result["smooth_d2"])
         zeta_learning_rate.append(result["smooth_zeta"])
         chi_learning_rate.append(result["smooth_chi"])
 
         alpha_iters.append(result["iters_alpha"])
         gamma_iters.append(result["iters_gamma"])
+        d1_iters.append(result["iters_d1"])
+        d2_iters.append(result["iters_d2"])
         zeta_iters.append(result["iters_zeta"])
         chi_iters.append(result["iters_chi"])
 
@@ -86,7 +98,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epoch
                 file.write(output_str)
             epoch_time = 0  # Reset the epoch time
 
-        if epoch > 0 and epoch % 500 == 0:
+        if epoch > 0 and epoch % 100 == 0:
             plot_outputs(model, data, output_dir)
             # Save the model object using pickle
             with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
@@ -100,14 +112,20 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epoch
         "likelihoods": likelihoods,
         "alpha_loss_increase": alpha_loss_increase,
         "gamma_loss_increase": gamma_loss_increase,
+        "d1_loss_increase": d1_loss_increase,
+        "d2_loss_increase": d2_loss_increase,
         "zeta_loss_increase": zeta_loss_increase,
         "chi_loss_increase": chi_loss_increase,
         "alpha_learning_rate": alpha_learning_rate,
         "gamma_learning_rate": gamma_learning_rate,
+        "d1_learning_rate": d1_learning_rate,
+        "d2_learning_rate": d2_learning_rate,
         "zeta_learning_rate": zeta_learning_rate,
         "chi_learning_rate": chi_learning_rate,
         "alpha_iters": alpha_iters,
         "gamma_iters": gamma_iters,
+        "d1_iters": d1_iters,
+        "d2_iters": d2_iters,
         "zeta_iters": zeta_iters,
         "chi_iters": chi_iters
     }
@@ -122,9 +140,10 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epoch
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run the Python script from the command line.')
 
-    parser.add_argument('--tau_psi', type=int, default=10000, help='Value for tau_psi')
-    parser.add_argument('--tau_beta', type=int, default=5000, help='Value for tau_beta')
-    parser.add_argument('--num_epochs', type=int, default=10000, help='Number of training epochs')
+    parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
+    parser.add_argument('--tau_beta', type=int, default=1000, help='Value for tau_beta')
+    parser.add_argument('--tau_s', type=int, default=100, help='Value for tau_s')
+    parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--K', type=int, default=100, help='Number of neurons')
     parser.add_argument('--R', type=int, default=15, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
@@ -139,6 +158,7 @@ if __name__ == "__main__":
     intensity_bias = args.intensity_bias
     tau_psi = args.tau_psi
     tau_beta = args.tau_beta
+    tau_s = args.tau_s
     num_epochs = args.num_epochs
 
-    training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, num_epochs)
+    training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, num_epochs)
