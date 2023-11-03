@@ -62,23 +62,23 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, nu
         likelihood = result["likelihood"]
         likelihoods.append(likelihood)
 
-        alpha_loss_increase.append(result["alpha_loss_increase"])
-        gamma_loss_increase.append(result["gamma_loss_increase"])
-        d_loss_increase.append(result["d_loss_increase"])
-        zeta_loss_increase.append(result["zeta_loss_increase"])
-        chi_loss_increase.append(result["chi_loss_increase"])
-
-        alpha_learning_rate.append(result["smooth_alpha"])
-        gamma_learning_rate.append(result["smooth_gamma"])
-        d_learning_rate.append(result["smooth_d"])
-        zeta_learning_rate.append(result["smooth_zeta"])
-        chi_learning_rate.append(result["smooth_chi"])
-
-        alpha_iters.append(result["iters_alpha"])
-        gamma_iters.append(result["iters_gamma"])
-        d_iters.append(result["iters_d"])
-        zeta_iters.append(result["iters_zeta"])
-        chi_iters.append(result["iters_chi"])
+        # alpha_loss_increase.append(result["alpha_loss_increase"])
+        # gamma_loss_increase.append(result["gamma_loss_increase"])
+        # d_loss_increase.append(result["d_loss_increase"])
+        # zeta_loss_increase.append(result["zeta_loss_increase"])
+        # chi_loss_increase.append(result["chi_loss_increase"])
+        #
+        # alpha_learning_rate.append(result["smooth_alpha"])
+        # gamma_learning_rate.append(result["smooth_gamma"])
+        # d_learning_rate.append(result["smooth_d"])
+        # zeta_learning_rate.append(result["smooth_zeta"])
+        # chi_learning_rate.append(result["smooth_chi"])
+        #
+        # alpha_iters.append(result["iters_alpha"])
+        # gamma_iters.append(result["iters_gamma"])
+        # d_iters.append(result["iters_d"])
+        # zeta_iters.append(result["iters_zeta"])
+        # chi_iters.append(result["iters_chi"])
 
         end_time = time.time()  # Record the end time of the epoch
         elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
@@ -132,9 +132,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run the Python script from the command line.')
 
     parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
-    parser.add_argument('--tau_beta', type=int, default=1000, help='Value for tau_beta')
+    parser.add_argument('--tau_beta', type=int, default=8000, help='Value for tau_beta')
     parser.add_argument('--tau_s', type=int, default=1000, help='Value for tau_s')
-    parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs')
+    parser.add_argument('--num_epochs', type=int, default=1004, help='Number of training epochs')
     parser.add_argument('--K', type=int, default=100, help='Number of neurons')
     parser.add_argument('--R', type=int, default=15, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')

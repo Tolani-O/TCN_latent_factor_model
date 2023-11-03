@@ -12,7 +12,8 @@ class SpikeTrainModel:
         self.gamma = None
         self.alpha = None
         self.zeta = None
-        self.d = None
+        self.d1 = None
+        self.d2 = None
 
         # parameters
         self.Y = Y
@@ -25,7 +26,8 @@ class SpikeTrainModel:
         self.V = None
         self.knots = None
         self.knots_1 = None
-        self.Omega_beta_B = None
+        self.BDelta1TDelta1BT = None
+        self.Delta2BT = None
         self.Omega_psi_B = None
         self.degree = None
 
@@ -52,8 +54,10 @@ class SpikeTrainModel:
         self.alpha_prime_add = np.zeros((1, Q))
         self.alpha_prime_add[:, 1] = 1
         self.U_ones = np.triu(np.ones((Q, Q)))
-        self.Omega_beta_B = csr_array(create_second_diff_matrix(T)) @ self.V.T
-        self.Omega_psi_B = self.Omega_beta_B
+        Delta1BT = csr_array(create_first_diff_matrix(T)) @ self.V.T
+        self.BDelta1TDelta1BT = Delta1BT.T @ Delta1BT
+        self.Delta2BT = csr_array(create_second_diff_matrix(T)) @ self.V.T
+        self.Omega_psi_B = self.BDelta1TDelta1BT
 
         # variables
         np.random.seed(0)
@@ -62,7 +66,8 @@ class SpikeTrainModel:
         self.gamma = np.random.rand(L, P)
         self.alpha = np.zeros((K, Q))
         self.zeta = np.zeros((R, Q))
-        self.d = np.zeros((L, 1))
+        self.d1 = np.zeros((L, 1))
+        self.d2 = np.zeros((L, 1))
 
         return self
 
@@ -90,10 +95,13 @@ class SpikeTrainModel:
         log_likelihood = objects["log_likelihood"]
         psi_penalty = objects["psi_penalty"]
         kappa_penalty = objects["kappa_penalty"]
-        beta_penalty = objects["beta_penalty"]
-        s_penalty = objects["s_penalty"]
-        s_norm = objects["s_norm"]
-        loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
+        beta_s1_penalty = objects["beta_s1_penalty"]
+        s1_penalty = objects["s1_penalty"]
+        s1_norm = objects["s1_norm"]
+        beta_s2_penalty = objects["beta_s2_penalty"]
+        s2_penalty = objects["s2_penalty"]
+        s2_norm = objects["s2_norm"]
+        loss = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
         loss_0 = loss
         eps = 1e-5
 
@@ -101,26 +109,26 @@ class SpikeTrainModel:
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
-        exp_kprime_betaBOmega = np.exp(kprime * beta @ self.Omega_beta_B.T)
-        dlogL_dgamma = beta * (
-                    G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
-                    tau_beta * s_norm * (2/np.log(1 + exp_kprime_betaBOmega + eps) * exp_kprime_betaBOmega - 1) @ self.Omega_beta_B)
+        exp_KprimeBetaBDeltaT = np.exp(kprime * beta @ self.Delta2BT.T)
+        likelihood_component = G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)])
+        s1_component = 2 * s1_norm * beta @ self.BDelta1TDelta1BT
+        s2_component = s2_norm * (2/np.log(1 + exp_KprimeBetaBDeltaT + eps) * exp_KprimeBetaBDeltaT - 1) @ self.Delta2BT
+        dlogL_dgamma = beta * (likelihood_component - tau_beta * (s1_component + s2_component))
         while ct < max_iters:
             gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 
             # set up variables to compute loss
             beta = np.exp(gamma_plus)
-            # beta[(L - 1), :] = 1
             GBeta = G @ beta
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
             lambda_del_t = np.exp(GBetaBPsi) * self.dt
             # compute loss
             log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
-            kprime_betaBOmega = kprime * beta @ self.Omega_beta_B.T
-            beta_penalty = - 2 * tau_beta / kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
-                            kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze()
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
-
+            beta_s1_penalty = - tau_beta * (s1_norm.T @ np.sum((beta @ self.BDelta1TDelta1BT) * beta, axis=1)).squeeze()
+            KprimeBetaBDeltaT = kprime * beta @ self.Delta2BT.T
+            beta_s2_penalty = - 2 * tau_beta / kprime * (s2_norm.T @ np.sum(np.log(1 + np.exp(KprimeBetaBDeltaT)) -
+                               KprimeBetaBDeltaT / 2 - np.log(2), axis=1)).squeeze()
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
             # Armijo condition, using Frobenius norm for matrices, but for maximization
             if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro') ** 2:
                 break
@@ -139,57 +147,101 @@ class SpikeTrainModel:
 
         # set up variables to compute loss in next round
         beta = np.exp(self.gamma)  # now fixed
-        # beta[(L - 1), :] = 1  # now fixed
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         lambda_del_t = np.exp(GBetaBPsi) * self.dt  # variable
         # compute loss
         log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
 
-        # smooth_d
+        # smooth_d1
         ct = 0
         learning_rate = 1
-        kprime_betaBOmega = kprime * beta @ self.Omega_beta_B.T
-        dlogL_dd = (2 * s_norm * (s_norm.T - np.eye(L))) @ (tau_beta/kprime * np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
-                    kprime_betaBOmega/2 - np.log(2), axis=1)[:, np.newaxis] + tau_s * (s_norm - 1/L))
+        diagBetaDeltaBeta = np.sum((beta @ self.BDelta1TDelta1BT) * beta, axis=1)
+        dlogL_dd1 = s1_norm * (s1_norm.T - np.eye(L)) @ (tau_beta * np.sum((beta @ self.BDelta1TDelta1BT) * beta, axis=1)[:, np.newaxis] +
+                                                         2 * tau_s * (s1_norm - 1 / L))
         while ct < max_iters:
-            d_plus = self.d + learning_rate * dlogL_dd
+            d1_plus = self.d1 + learning_rate * dlogL_dd1
 
             # set up variables to compute loss
-            s = np.exp(d_plus)
-            s[0, :] = 1
-            s_norm = (1 / np.sum(s)) * s
-            beta_penalty = - 2 * tau_beta / kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
-                           kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze()
-            s_norm_minus_linv = s_norm - 1/L
-            s_penalty = - tau_s * (s_norm_minus_linv.T @ s_norm_minus_linv).squeeze()
+            s1 = np.exp(d1_plus)
+            s1[0, :] = 1
+            s1_norm = (1 / np.sum(s1)) * s1
+            beta_s1_penalty = - tau_beta * (s1_norm.T @ diagBetaDeltaBeta).squeeze()
+            s1_norm_minus_linv = s1_norm - 1 / L
+            s1_penalty = - tau_s * (s1_norm_minus_linv.T @ s1_norm_minus_linv).squeeze()
             # compute loss
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
             # Armijo condition, using l2 norm, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd * dlogL_dd):
+            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd1 * dlogL_dd1):
                 break
             learning_rate *= d_factor
             ct += 1
 
         if ct < max_iters:
-            ct_d = ct
-            smooth_d = learning_rate
+            ct_d1 = ct
+            smooth_d1 = learning_rate
             loss = loss_next
-            self.d = d_plus
+            self.d1 = d1_plus
         else:
-            ct_d = np.inf
-            smooth_d = 0
-        loss_d = loss
+            ct_d1 = np.inf
+            smooth_d1 = 0
+        loss_d1 = loss
 
         # set up variables to compute loss in next round
-        s = np.exp(self.d)
-        s[0, :] = 1
-        s_norm = (1 / np.sum(s)) * s
-        beta_penalty = - 2 * tau_beta / kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
-                     kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze() # now fixed
-        s_norm_minus_linv = s_norm - 1 / L
-        s_penalty = - tau_s * (s_norm_minus_linv.T @ s_norm_minus_linv).squeeze() # now fixed
+        s1 = np.exp(self.d1)
+        s1[0, :] = 1
+        s1_norm = (1 / np.sum(s1)) * s1
+        beta_s1_penalty = - tau_beta * (s1_norm.T @ diagBetaDeltaBeta).squeeze()
+        s1_norm_minus_linv = s1_norm - 1 / L
+        s1_penalty = - tau_s * (s1_norm_minus_linv.T @ s1_norm_minus_linv).squeeze()
+
+        # smooth_d2
+        ct = 0
+        learning_rate = 1
+        KprimeBetaBDelta2T = kprime * beta @ self.Delta2BT.T
+        dlogL_dd2 = 2 * s2_norm * (s2_norm.T - np.eye(L)) @ (tau_beta/kprime *
+                    np.sum(np.log(1 + np.exp(KprimeBetaBDelta2T)) - 1/2 * KprimeBetaBDelta2T - np.log(2), axis=1)[:, np.newaxis] + tau_s * (s2_norm - 1/L))
+        while ct < max_iters:
+            d2_plus = self.d2 + learning_rate * dlogL_dd2
+
+            # set up variables to compute loss
+            s2 = np.exp(d2_plus)
+            s2[0, :] = 1
+            s2_norm = (1 / np.sum(s2)) * s2
+            beta_s2_penalty = - 2 * tau_beta / kprime * (s2_norm.T @ np.sum(np.log(1 + np.exp(KprimeBetaBDelta2T)) -
+                                                                            KprimeBetaBDelta2T / 2 - np.log(2),
+                                                                            axis=1)).squeeze()
+            s2_norm_minus_linv = s2_norm - 1 / L
+            s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
+            # compute loss
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
+
+            # Armijo condition, using l2 norm, but for maximization
+            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd2 * dlogL_dd2):
+                break
+            learning_rate *= d_factor
+            ct += 1
+
+        if ct < max_iters:
+            ct_d2 = ct
+            smooth_d2 = learning_rate
+            loss = loss_next
+            self.d2 = d2_plus
+        else:
+            ct_d2 = np.inf
+            smooth_d2 = 0
+        loss_d2 = loss
+
+        # set up variables to compute loss in next round
+        s2 = np.exp(self.d2)
+        s2[0, :] = 1
+        s2_norm = (1 / np.sum(s2)) * s2
+        beta_s2_penalty = - 2 * tau_beta / kprime * (s2_norm.T @ np.sum(np.log(1 + np.exp(KprimeBetaBDelta2T)) -
+                                                                        KprimeBetaBDelta2T / 2 - np.log(2),
+                                                                        axis=1)).squeeze()
+        s2_norm_minus_linv = s2_norm - 1 / L
+        s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
 
         if time_warping:
             # smooth_alpha
@@ -226,7 +278,7 @@ class SpikeTrainModel:
                 # compute loss
                 log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
                 psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
-                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
                 # Armijo condition, using Frobenius norm for matrices, but for maximization
                 if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dalpha, ord='fro') ** 2:
@@ -296,7 +348,7 @@ class SpikeTrainModel:
                 # compute loss
                 log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
                 kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
-                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
                 # Armijo condition, using Frobenius norm for matrices, but for maximization
                 if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dzeta, ord='fro') ** 2:
@@ -357,7 +409,7 @@ class SpikeTrainModel:
             lambda_del_t = np.exp(GBetaBPsi) * self.dt
             # compute loss
             log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
             if (loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dchi, ord='fro') ** 2):
@@ -380,12 +432,16 @@ class SpikeTrainModel:
             "gamma_loss_increase": loss_gamma - loss_0,
             "smooth_gamma": smooth_gamma,
             "iters_gamma": ct_gamma,
-            "dlogL_dd": dlogL_dd,
-            "d_loss_increase": loss_d - loss_gamma,
-            "smooth_d": smooth_d,
-            "iters_d": ct_d,
+            "dlogL_dd1": dlogL_dd1,
+            "d1_loss_increase": loss_d1 - loss_gamma,
+            "smooth_d1": smooth_d1,
+            "iters_d1": ct_d1,
+            "dlogL_dd2": dlogL_dd2,
+            "d2_loss_increase": loss_d2 - loss_d1,
+            "smooth_d2": smooth_d2,
+            "iters_d2": ct_d2,
             "dlogL_dalpha": dlogL_dalpha,
-            "alpha_loss_increase": loss_alpha - loss_d,
+            "alpha_loss_increase": loss_alpha - loss_d2,
             "smooth_alpha": smooth_alpha,
             "iters_alpha": ct_alpha,
             "dlogL_dzeta": dlogL_dzeta,
@@ -397,7 +453,10 @@ class SpikeTrainModel:
             "smooth_chi": smooth_chi,
             "iters_chi": ct_chi,
             "likelihood": loss,
-            "beta_penalty": beta_penalty,
+            "beta_s1_penalty": beta_s1_penalty,
+            "s1_penalty": s1_penalty,
+            "beta_s2_penalty": beta_s2_penalty,
+            "s2_penalty": s2_penalty,
             "psi_penalty": psi_penalty,
             "kappa_penalty": kappa_penalty
         }
@@ -428,14 +487,20 @@ class SpikeTrainModel:
         else:
             psi_penalty = 0
             kappa_penalty = 0
-        s = np.exp(self.d)
-        s[0, :] = 1
-        s_norm = (1/np.sum(s)) * s
-        kprime_betaBOmega = kprime * beta @ self.Omega_beta_B.T
-        beta_penalty = - 2 * tau_beta/kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
-                       kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze()
-        s_norm_minus_linv = s_norm - 1/L
-        s_penalty = - tau_s * (s_norm_minus_linv.T @ s_norm_minus_linv).squeeze()
+        s1 = np.exp(self.d1)
+        s1[0, :] = 1
+        s1_norm = (1/np.sum(s1)) * s1
+        beta_s1_penalty = - tau_beta * (s1_norm.T @ np.sum((beta @ self.BDelta1TDelta1BT) * beta, axis=1)).squeeze()
+        s1_norm_minus_linv = s1_norm - 1 / L
+        s1_penalty = - tau_s * (s1_norm_minus_linv.T @ s1_norm_minus_linv).squeeze()
+        s2 = np.exp(self.d2)
+        s2[0, :] = 1
+        s2_norm = (1 / np.sum(s2)) * s2
+        KprimeBetaBDelta2T = kprime * beta @ self.Delta2BT.T
+        beta_s2_penalty = - 2 * tau_beta/kprime * (s2_norm.T @ np.sum(np.log(1 + np.exp(KprimeBetaBDelta2T)) -
+                       KprimeBetaBDelta2T / 2 - np.log(2), axis=1)).squeeze()
+        s2_norm_minus_linv = s2_norm - 1/L
+        s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
 
         result = {
             "B_sparse": B_sparse,
@@ -452,9 +517,12 @@ class SpikeTrainModel:
             "log_likelihood": log_likelihood,
             "psi_penalty": psi_penalty,
             "kappa_penalty": kappa_penalty,
-            "beta_penalty": beta_penalty,
-            "s_penalty": s_penalty,
-            "s_norm": s_norm
+            "beta_s1_penalty": beta_s1_penalty,
+            "s1_penalty": s1_penalty,
+            "s1_norm": s1_norm,
+            "beta_s2_penalty": beta_s2_penalty,
+            "s2_penalty": s2_penalty,
+            "s2_norm": s2_norm
         }
         return result
 
