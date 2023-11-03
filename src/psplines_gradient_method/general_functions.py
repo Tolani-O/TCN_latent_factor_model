@@ -45,7 +45,8 @@ def plot_spikes(spikes, trials, output_dir, x_offset=0):
         indices = np.where(spikes[0] == i)[0]
         values = (spikes[1][indices] - x_offset)/1000
         grouped_s.append((i, values))
-    plt.figure(figsize=(40*trials, (10/3)*trials))
+    # plt.figure(figsize=(40*trials, (10/3)*trials))
+    plt.figure()
     for group in grouped_s:
         plt.scatter(group[1], np.zeros_like(group[1]) + group[0], s=1, c='black')
     plt.savefig(os.path.join(output_dir, 'groundTruth_spikes.png'))
@@ -91,7 +92,7 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
     binned_spikes = np.where(model.Y >= 1)
     plot_spikes(binned_spikes, R, output_dir)
     plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
-    objects = model.compute_prelim_objects(K, L, Q, R, 0, 0, time_warping)
+    objects = model.compute_prelim_objects(K, L, Q, R, 0, 0, 0, 1, time_warping)
     G = objects["G"]
     time_matrix = objects["time_matrix"]
     psi_norm = objects["psi_norm"]

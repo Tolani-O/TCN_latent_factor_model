@@ -1,6 +1,6 @@
 import numpy as np
 import multiprocessing as mp
-from src.psplines_gradient_method.general_functions import create_first_diff_matrix
+from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_second_diff_matrix
 from scipy.interpolate import BSpline
 from scipy.sparse import csr_array, vstack, hstack
 
@@ -10,9 +10,9 @@ class SpikeTrainModel:
         # variables
         self.chi = None
         self.gamma = None
-        self.d = None
         self.alpha = None
         self.zeta = None
+        self.d = None
 
         # parameters
         self.Y = Y
@@ -53,7 +53,6 @@ class SpikeTrainModel:
         self.alpha_prime_add[:, 1] = 1
         self.U_ones = np.triu(np.ones((Q, Q)))
         self.Omega_beta_B = csr_array(create_first_diff_matrix(T)) @ self.V.T
-        self.Omega_beta_B = self.Omega_beta_B.T @ self.Omega_beta_B
         self.Omega_psi_B = self.Omega_beta_B
 
         # variables
@@ -63,10 +62,12 @@ class SpikeTrainModel:
         self.gamma = np.random.rand(L, P)
         self.alpha = np.zeros((K, Q))
         self.zeta = np.zeros((R, Q))
+        self.d = np.zeros((L, 1))
 
         return self
 
-    def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, time_warping=False,
+    def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, tau_s, kprime=1,
+                                                               time_warping=False,
                                                                alpha_factor=1e-2, gamma_factor=1e-2,
                                                                G_factor=1e-2, d_factor=1e-2,
                                                                alpha=0.3, max_iters=4):
@@ -76,7 +77,7 @@ class SpikeTrainModel:
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping)
         B_sparse = objects["B_sparse"]
         G = objects["G"]
         lambda_del_t = objects["lambda_del_t"]
@@ -90,29 +91,35 @@ class SpikeTrainModel:
         psi_penalty = objects["psi_penalty"]
         kappa_penalty = objects["kappa_penalty"]
         beta_penalty = objects["beta_penalty"]
-        loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
+        s_penalty = objects["s_penalty"]
+        s_norm = objects["s_norm"]
+        loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
         loss_0 = loss
+        eps = 1e-5
 
         # smooth_gamma
         ct = 0
         learning_rate = 1
         y_minus_lambda_del_t = self.Y - lambda_del_t
+        exp_kprime_betaBOmega = np.exp(kprime * beta @ self.Omega_beta_B.T)
         dlogL_dgamma = beta * (
                     G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
-                    2 * tau_beta * beta @ self.Omega_beta_B)
+                    tau_beta * s_norm * (2/np.log(1 + exp_kprime_betaBOmega + eps) * exp_kprime_betaBOmega - 1) @ self.Omega_beta_B)
         while ct < max_iters:
             gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 
             # set up variables to compute loss
             beta = np.exp(gamma_plus)
-            beta[(L - 1), :] = 1
+            # beta[(L - 1), :] = 1
             GBeta = G @ beta
             GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
             lambda_del_t = np.exp(GBetaBPsi) * self.dt
             # compute loss
             log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
-            beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
+            kprime_betaBOmega = kprime * beta @ self.Omega_beta_B.T
+            beta_penalty = - 2 * tau_beta / kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
+                            kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze()
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
             if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro') ** 2:
@@ -132,12 +139,57 @@ class SpikeTrainModel:
 
         # set up variables to compute loss in next round
         beta = np.exp(self.gamma)  # now fixed
-        beta[(L - 1), :] = 1  # now fixed
+        # beta[(L - 1), :] = 1  # now fixed
         GBeta = G @ beta  # variable
         GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
         lambda_del_t = np.exp(GBetaBPsi) * self.dt  # variable
-        # compute updated penalty
-        beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
+        # compute loss
+        log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
+
+        # smooth_d
+        ct = 0
+        learning_rate = 1
+        kprime_betaBOmega = kprime * beta @ self.Omega_beta_B.T
+        dlogL_dd = (2 * s_norm * (s_norm.T - np.eye(L))) @ (tau_beta/kprime * np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
+                    kprime_betaBOmega/2 - np.log(2), axis=1)[:, np.newaxis] + tau_s * (s_norm - 1/L))
+        while ct < max_iters:
+            d_plus = self.d + learning_rate * dlogL_dd
+
+            # set up variables to compute loss
+            s = np.exp(d_plus)
+            s[0, :] = 1
+            s_norm = (1 / np.sum(s)) * s
+            beta_penalty = - 2 * tau_beta / kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
+                           kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze()
+            s_norm_minus_linv = s_norm - 1/L
+            s_penalty = - tau_s * (s_norm_minus_linv.T @ s_norm_minus_linv).squeeze()
+            # compute loss
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
+
+            # Armijo condition, using l2 norm, but for maximization
+            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd * dlogL_dd):
+                break
+            learning_rate *= d_factor
+            ct += 1
+
+        if ct < max_iters:
+            ct_d = ct
+            smooth_d = learning_rate
+            loss = loss_next
+            self.d = d_plus
+        else:
+            ct_d = np.inf
+            smooth_d = 0
+        loss_d = loss
+
+        # set up variables to compute loss in next round
+        s = np.exp(self.d)
+        s[0, :] = 1
+        s_norm = (1 / np.sum(s)) * s
+        beta_penalty = - 2 * tau_beta / kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
+                     kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze() # now fixed
+        s_norm_minus_linv = s_norm - 1 / L
+        s_penalty = - tau_s * (s_norm_minus_linv.T @ s_norm_minus_linv).squeeze() # now fixed
 
         if time_warping:
             # smooth_alpha
@@ -174,7 +226,7 @@ class SpikeTrainModel:
                 # compute loss
                 log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
                 psi_penalty = - tau_psi * np.sum((psi_norm @ self.Omega_psi_B) * psi_norm)
-                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
 
                 # Armijo condition, using Frobenius norm for matrices, but for maximization
                 if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dalpha, ord='fro') ** 2:
@@ -244,7 +296,7 @@ class SpikeTrainModel:
                 # compute loss
                 log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
                 kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
-                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
 
                 # Armijo condition, using Frobenius norm for matrices, but for maximization
                 if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dzeta, ord='fro') ** 2:
@@ -275,6 +327,7 @@ class SpikeTrainModel:
             lambda_del_t = np.exp(GBetaBPsi) * self.dt
             # compute updated penalty
             kappa_penalty = - tau_psi * np.sum((kappa_norm @ self.Omega_psi_B) * kappa_norm)
+
         else:
             dlogL_dalpha = 0
             smooth_alpha = 0
@@ -304,7 +357,7 @@ class SpikeTrainModel:
             lambda_del_t = np.exp(GBetaBPsi) * self.dt
             # compute loss
             log_likelihood = np.sum(GBetaBPsi * self.Y - lambda_del_t)
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
+            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
 
             # Armijo condition, using Frobenius norm for matrices, but for maximization
             if (loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dchi, ord='fro') ** 2):
@@ -327,8 +380,12 @@ class SpikeTrainModel:
             "gamma_loss_increase": loss_gamma - loss_0,
             "smooth_gamma": smooth_gamma,
             "iters_gamma": ct_gamma,
+            "dlogL_dd": dlogL_dd,
+            "d_loss_increase": loss_d - loss_gamma,
+            "smooth_d": smooth_d,
+            "iters_d": ct_d,
             "dlogL_dalpha": dlogL_dalpha,
-            "alpha_loss_increase": loss_alpha - loss_gamma,
+            "alpha_loss_increase": loss_alpha - loss_d,
             "smooth_alpha": smooth_alpha,
             "iters_alpha": ct_alpha,
             "dlogL_dzeta": dlogL_dzeta,
@@ -347,19 +404,17 @@ class SpikeTrainModel:
 
         return result
 
-    def compute_prelim_objects(self, K, L, Q, R, tau_psi, tau_beta, time_warping):
+    def compute_prelim_objects(self, K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping):
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)
         psi = exp_alpha_c @ self.U_ones  # variable
         psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # variable, called \psi' in the document
         exp_zeta_c = (np.exp(self.zeta) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, R, axis=0)
         kappa = exp_zeta_c @ self.U_ones  # variable
         kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # variable, called \kappa' in the document
-        time_matrix = 0.5 * max(self.time) * np.hstack(
-            [(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
-        B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in
-                    time_matrix]  # variable
+        time_matrix = 0.5 * max(self.time) * np.hstack([(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
+        B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # variable
         beta = np.exp(self.gamma)  # variable
-        beta[(L - 1), :] = 1  # variable. Adding intercept term for latent factors
+        # beta[(L - 1), :] = 1  # variable. Adding intercept term for latent factors
         exp_chi = np.exp(self.chi)  # variable
         exp_chi[:, 0] = 1
         G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
@@ -373,7 +428,14 @@ class SpikeTrainModel:
         else:
             psi_penalty = 0
             kappa_penalty = 0
-        beta_penalty = - tau_beta * np.sum((beta @ self.Omega_beta_B) * beta)
+        s = np.exp(self.d)
+        s[0, :] = 1
+        s_norm = (1/np.sum(s)) * s
+        kprime_betaBOmega = kprime * beta @ self.Omega_beta_B.T
+        beta_penalty = - 2 * tau_beta/kprime * (s_norm.T @ np.sum(np.log(1 + np.exp(kprime_betaBOmega)) -
+                       kprime_betaBOmega / 2 - np.log(2), axis=1)).squeeze()
+        s_norm_minus_linv = s_norm - 1/L
+        s_penalty = - tau_s * (s_norm_minus_linv.T @ s_norm_minus_linv).squeeze()
 
         result = {
             "B_sparse": B_sparse,
@@ -390,33 +452,37 @@ class SpikeTrainModel:
             "log_likelihood": log_likelihood,
             "psi_penalty": psi_penalty,
             "kappa_penalty": kappa_penalty,
-            "beta_penalty": beta_penalty
+            "beta_penalty": beta_penalty,
+            "s_penalty": s_penalty,
+            "s_norm": s_norm
         }
         return result
 
-    def compute_loss_time_warping(self, tau_psi, tau_beta, time_warping=False):
+    def compute_loss_time_warping(self, tau_psi, tau_beta, tau_s, kprime=1, time_warping=False):
 
         # define parameters
         K, Q = self.alpha.shape
         L = self.gamma.shape[0]
         R = self.trials
 
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping)
         log_likelihood = objects["log_likelihood"]
         psi_penalty = objects["psi_penalty"]
         kappa_penalty = objects["kappa_penalty"]
         beta_penalty = objects["beta_penalty"]
-        loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty
+        s_penalty = objects["s_penalty"]
+        loss = log_likelihood + psi_penalty + kappa_penalty + beta_penalty + s_penalty
 
         result = {
             "likelihood": loss,
             "psi_penalty": psi_penalty,
             "beta_penalty": beta_penalty,
-            "kappa_penalty": kappa_penalty
+            "kappa_penalty": kappa_penalty,
+            "s_penalty": s_penalty
         }
         return result
 
-    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta, time_warping=False):
+    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta, tau_s, kprime=1, time_warping=False):
 
         # define parameters
         K, L = self.chi.shape
@@ -424,11 +490,12 @@ class SpikeTrainModel:
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, time_warping)
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping)
         B_sparse = objects["B_sparse"]
         G = objects["G"]
         GBeta = objects["GBeta"]
         beta = objects["beta"]
+        s_norm = objects["s_norm"]
         exp_alpha_c = objects["exp_alpha_c"]
         exp_zeta_c = objects["exp_zeta_c"]
         kappa_norm = objects["kappa_norm"]
@@ -438,9 +505,13 @@ class SpikeTrainModel:
         y_minus_lambda_del_t = self.Y - lambda_del_t
 
         # compute gradients
+        exp_kprime_betaBOmega = np.exp(kprime * beta @ self.Omega_beta_B.T)
         dlogL_dgamma = beta * (
-                    G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
-                    2 * tau_beta * beta @ self.Omega_beta_B)
+                G.T @ np.vstack([y_minus_lambda_del_t[k] @ b.transpose() for k, b in enumerate(B_sparse)]) -
+                tau_beta * s_norm * (2 / np.log(1 + exp_kprime_betaBOmega) * exp_kprime_betaBOmega - 1) @ self.Omega_beta_B)
+
+        dlogL_dd = (s_norm * (s_norm.T - np.eye(L))) @ (tau_beta * np.sum((beta @ self.Omega_beta_B) * beta, axis=1)[:, np.newaxis] +
+                    2 * tau_s * (s_norm - 1 / L))
 
         if time_warping:
             knots_Bpsinminus1_1 = [
@@ -475,7 +546,7 @@ class SpikeTrainModel:
             [y_minus_lambda_del_t[k] @ (G[k, :, np.newaxis] * (np.eye(L) - G[k]) @ beta @ b).T for k, b in
              enumerate(B_sparse)])
 
-        return dlogL_dgamma, dlogL_dalpha, dlogL_dzeta, dlogL_dchi
+        return dlogL_dgamma, dlogL_dd, dlogL_dalpha, dlogL_dzeta, dlogL_dchi
 
     def compute_grad_chunk(self, name, variable, i, eps, tau_psi, tau_beta, loss):
 
@@ -512,6 +583,11 @@ class SpikeTrainModel:
             pool.apply_async(self.compute_grad_chunk, args=('alpha', self.alpha, k, eps, tau_psi, tau_beta, loss)) for k
             in range(K)]
 
+        # d gradient
+        d_async_results = [
+            pool.apply_async(self.compute_grad_chunk, args=('s', self.d, l, eps, tau_psi, tau_beta, loss)) for
+            l in range(L)]
+
         if time_warping:
             # zeta gradient
             zeta_async_results = [
@@ -532,6 +608,7 @@ class SpikeTrainModel:
         pool.join()
 
         alpha_grad = np.vstack([r.get() for r in alpha_async_results])
+        d_grad = np.vstack([r.get() for r in d_async_results])
         if time_warping:
             zeta_grad = np.vstack([r.get() for r in zeta_async_results])
             gamma_grad = np.vstack([r.get() for r in gamma_async_results])
@@ -540,4 +617,4 @@ class SpikeTrainModel:
             gamma_grad = 0
         chi_grad = np.vstack([r.get() for r in chi_async_results])
 
-        return gamma_grad, alpha_grad, zeta_grad, chi_grad
+        return gamma_grad, d_grad, alpha_grad, zeta_grad, chi_grad
