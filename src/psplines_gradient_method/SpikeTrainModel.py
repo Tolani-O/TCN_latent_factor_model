@@ -73,7 +73,7 @@ class SpikeTrainModel:
 
         return self
 
-    def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, tau_s, kprime=1,
+    def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, tau_s, beta_first=1,
                                                                time_warping=False,
                                                                alpha_factor=1e-2, gamma_factor=1e-2,
                                                                G_factor=1e-2, d_factor=1e-2,
@@ -84,7 +84,7 @@ class SpikeTrainModel:
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping)
+        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, time_warping)
         B_sparse = objects["B_sparse"]
         exp_alpha_c = objects["exp_alpha_c"]
         exp_zeta_c = objects["exp_zeta_c"]
@@ -108,138 +108,201 @@ class SpikeTrainModel:
         loss = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
         loss_0 = loss
 
-        # smooth_gamma
-        ct = 0
-        learning_rate = 1
-        exp_chi = np.vstack([np.exp(self.chi[k] - maxes[k]) for k in range(K)])  # variable
-        likelihood_component = exp_chi.T @ np.vstack([(1/(sum_exps_chi_plus_gamma_B[k]) * self.Y[k] - 1/sum_exps_chi[k] * self.dt) @ b.transpose() for k, b in enumerate(B_sparse)])
-        s1_component = s1_norm * beta_minus_max @ self.BDelta1TDelta1BT
-        s2_component = s2_norm * beta_minus_max @ self.BDelta2TDelta2BT
-        dlogL_dgamma = beta_minus_max * np.exp(max_gamma) * (likelihood_component - 2 * tau_beta * np.exp(max_gamma) * (s1_component + s2_component))
-        while ct < max_iters:
-            gamma_plus = self.gamma + learning_rate * dlogL_dgamma
+        if beta_first:
+            # smooth_gamma
+            ct = 0
+            learning_rate = 1
+            exp_chi = np.vstack([np.exp(self.chi[k] - maxes[k]) for k in range(K)])  # variable
+            likelihood_component = exp_chi.T @ np.vstack([(1/(sum_exps_chi_plus_gamma_B[k]) * self.Y[k] - 1/sum_exps_chi[k] * self.dt) @ b.transpose() for k, b in enumerate(B_sparse)])
+            s1_component = s1_norm * beta_minus_max @ self.BDelta1TDelta1BT
+            s2_component = s2_norm * beta_minus_max @ self.BDelta2TDelta2BT
+            dlogL_dgamma = beta_minus_max * np.exp(max_gamma) * (likelihood_component - 2 * tau_beta * np.exp(max_gamma) * (s1_component + s2_component))
+            while ct < max_iters:
+                gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 
-            # set up variables to compute loss
-            maxes = [np.max(self.chi[k][:, np.newaxis] + gamma_plus) for k in range(K)]
+                # set up variables to compute loss
+                maxes = [np.max(self.chi[k][:, np.newaxis] + gamma_plus) for k in range(K)]
+                sum_exps_chi = [np.sum(np.exp(self.chi[k] - maxes[k])) for k in range(K)]
+                sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + gamma_plus - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
+                log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
+                               (1 / sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
+                max_gamma = np.max(gamma_plus)
+                beta_minus_max = np.exp(gamma_plus - max_gamma)
+                beta_s1_penalty = - tau_beta * np.exp(2 * max_gamma) * (s1_norm.T @ np.sum((beta_minus_max @ self.BDelta1TDelta1BT) * beta_minus_max, axis=1)).squeeze()
+                beta_s2_penalty = - tau_beta * np.exp(2 * max_gamma) * (s2_norm.T @ np.sum((beta_minus_max @ self.BDelta2TDelta2BT) * beta_minus_max, axis=1)).squeeze()
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
+                # Armijo condition, using Frobenius norm for matrices, but for maximization
+                if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro') ** 2:
+                    break
+                learning_rate *= gamma_factor
+                ct += 1
+
+            if ct < max_iters:
+                ct_gamma = ct
+                smooth_gamma = learning_rate
+                loss = loss_next
+                self.gamma = gamma_plus
+            else:
+                ct_gamma = np.inf
+                smooth_gamma = 0
+            loss_gamma = loss
+
+            # set up variables to compute loss in next round
+            maxes = [np.max(self.chi[k][:, np.newaxis] + self.gamma) for k in range(K)]
             sum_exps_chi = [np.sum(np.exp(self.chi[k] - maxes[k])) for k in range(K)]
-            sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + gamma_plus - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
+            sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + self.gamma - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
             log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
                            (1 / sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
-            max_gamma = np.max(gamma_plus)
-            beta_minus_max = np.exp(gamma_plus - max_gamma)
-            beta_s1_penalty = - tau_beta * np.exp(2 * max_gamma) * (s1_norm.T @ np.sum((beta_minus_max @ self.BDelta1TDelta1BT) * beta_minus_max, axis=1)).squeeze()
-            beta_s2_penalty = - tau_beta * np.exp(2 * max_gamma) * (s2_norm.T @ np.sum((beta_minus_max @ self.BDelta2TDelta2BT) * beta_minus_max, axis=1)).squeeze()
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
-            # Armijo condition, using Frobenius norm for matrices, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dgamma, ord='fro') ** 2:
-                break
-            learning_rate *= gamma_factor
-            ct += 1
+            max_gamma = np.max(self.gamma)
+            beta_minus_max = np.exp(self.gamma - max_gamma)
 
-        if ct < max_iters:
-            ct_gamma = ct
-            smooth_gamma = learning_rate
-            loss = loss_next
-            self.gamma = gamma_plus
-        else:
-            ct_gamma = np.inf
-            smooth_gamma = 0
-        loss_gamma = loss
+            # smooth_d1
+            ct = 0
+            learning_rate = 1
+            diagBetaDeltaBeta = np.sum((beta_minus_max @ self.BDelta1TDelta1BT) * beta_minus_max, axis=1)[:, np.newaxis]
+            dlogL_dd1 = s1_norm * (s1_norm.T - np.eye(L)) @ (tau_beta * np.exp(2 * max_gamma) * diagBetaDeltaBeta +
+                                                             2 * tau_s * (s1_norm - 1 / L))
+            while ct < max_iters:
+                d1_plus = self.d1 + learning_rate * dlogL_dd1
 
-        # set up variables to compute loss in next round
-        maxes = [np.max(self.chi[k][:, np.newaxis] + self.gamma) for k in range(K)]
-        sum_exps_chi = [np.sum(np.exp(self.chi[k] - maxes[k])) for k in range(K)]
-        sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + self.gamma - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
-        log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
-                       (1 / sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
-        max_gamma = np.max(self.gamma)
-        beta_minus_max = np.exp(self.gamma - max_gamma)
+                # set up variables to compute loss
+                s1 = np.exp(d1_plus)
+                s1[0, :] = 1
+                s1_norm = (1 / np.sum(s1)) * s1
+                beta_s1_penalty = - tau_beta * np.exp(2 * max_gamma) * (s1_norm.T @ diagBetaDeltaBeta).squeeze()
+                s1_norm_minus_linv = s1_norm - 1 / L
+                s1_penalty = - tau_s * (s1_norm_minus_linv.T @ s1_norm_minus_linv).squeeze()
+                # compute loss
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
-        # smooth_d1
-        ct = 0
-        learning_rate = 1
-        diagBetaDeltaBeta = np.sum((beta_minus_max @ self.BDelta1TDelta1BT) * beta_minus_max, axis=1)[:, np.newaxis]
-        dlogL_dd1 = s1_norm * (s1_norm.T - np.eye(L)) @ (tau_beta * np.exp(2 * max_gamma) * diagBetaDeltaBeta +
-                2 * tau_s * (s1_norm - 1 / L))
-        while ct < max_iters:
-            d1_plus = self.d1 + learning_rate * dlogL_dd1
+                # Armijo condition, using l2 norm, but for maximization
+                if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd1 * dlogL_dd1):
+                    break
+                learning_rate *= d_factor
+                ct += 1
 
-            # set up variables to compute loss
-            s1 = np.exp(d1_plus)
+            if ct < max_iters:
+                ct_d1 = ct
+                smooth_d1 = learning_rate
+                loss = loss_next
+                self.d1 = d1_plus
+            else:
+                ct_d1 = np.inf
+                smooth_d1 = 0
+            loss_d1 = loss
+
+            # set up variables to compute loss in next round
+            s1 = np.exp(self.d1)
             s1[0, :] = 1
             s1_norm = (1 / np.sum(s1)) * s1
             beta_s1_penalty = - tau_beta * np.exp(2 * max_gamma) * (s1_norm.T @ diagBetaDeltaBeta).squeeze()
             s1_norm_minus_linv = s1_norm - 1 / L
             s1_penalty = - tau_s * (s1_norm_minus_linv.T @ s1_norm_minus_linv).squeeze()
-            # compute loss
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
-            # Armijo condition, using l2 norm, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd1 * dlogL_dd1):
-                break
-            learning_rate *= d_factor
-            ct += 1
+            # smooth_d2
+            ct = 0
+            learning_rate = 1
+            diagBetaDeltaBeta = np.sum((beta_minus_max @ self.BDelta2TDelta2BT) * beta_minus_max, axis=1)[:, np.newaxis]
+            dlogL_dd2 = s2_norm * (s2_norm.T - np.eye(L)) @ (tau_beta * np.exp(2 * max_gamma) * diagBetaDeltaBeta +
+                                                             2 * tau_s * (s2_norm - 1 / L))
+            while ct < max_iters:
+                d2_plus = self.d2 + learning_rate * dlogL_dd2
 
-        if ct < max_iters:
-            ct_d1 = ct
-            smooth_d1 = learning_rate
-            loss = loss_next
-            self.d1 = d1_plus
-        else:
-            ct_d1 = np.inf
-            smooth_d1 = 0
-        loss_d1 = loss
+                # set up variables to compute loss
+                s2 = np.exp(d2_plus)
+                s2[0, :] = 1
+                s2_norm = (1 / np.sum(s2)) * s2
+                beta_s2_penalty = - tau_beta * np.exp(2 * max_gamma) * (s2_norm.T @ diagBetaDeltaBeta).squeeze()
+                s2_norm_minus_linv = s2_norm - 1 / L
+                s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
+                # compute loss
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
-        # set up variables to compute loss in next round
-        s1 = np.exp(self.d1)
-        s1[0, :] = 1
-        s1_norm = (1 / np.sum(s1)) * s1
-        beta_s1_penalty = - tau_beta * np.exp(2 * max_gamma) * (s1_norm.T @ diagBetaDeltaBeta).squeeze()
-        s1_norm_minus_linv = s1_norm - 1 / L
-        s1_penalty = - tau_s * (s1_norm_minus_linv.T @ s1_norm_minus_linv).squeeze()
+                # Armijo condition, using l2 norm, but for maximization
+                if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd2 * dlogL_dd2):
+                    break
+                learning_rate *= d_factor
+                ct += 1
 
-        # smooth_d2
-        ct = 0
-        learning_rate = 1
-        diagBetaDeltaBeta = np.sum((beta_minus_max @ self.BDelta2TDelta2BT) * beta_minus_max, axis=1)[:, np.newaxis]
-        dlogL_dd2 = s2_norm * (s2_norm.T - np.eye(L)) @ (tau_beta * np.exp(2 * max_gamma) * diagBetaDeltaBeta +
-                                                         2 * tau_s * (s2_norm - 1 / L))
-        while ct < max_iters:
-            d2_plus = self.d2 + learning_rate * dlogL_dd2
+            if ct < max_iters:
+                ct_d2 = ct
+                smooth_d2 = learning_rate
+                loss = loss_next
+                self.d2 = d2_plus
+            else:
+                ct_d2 = np.inf
+                smooth_d2 = 0
+            loss_d2 = loss
 
-            # set up variables to compute loss
-            s2 = np.exp(d2_plus)
+            # set up variables to compute loss in next round
+            s2 = np.exp(self.d2)
             s2[0, :] = 1
             s2_norm = (1 / np.sum(s2)) * s2
             beta_s2_penalty = - tau_beta * np.exp(2 * max_gamma) * (s2_norm.T @ diagBetaDeltaBeta).squeeze()
             s2_norm_minus_linv = s2_norm - 1 / L
             s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
-            # compute loss
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
-            # Armijo condition, using l2 norm, but for maximization
-            if loss_next >= loss + alpha * learning_rate * np.sum(dlogL_dd2 * dlogL_dd2):
-                break
-            learning_rate *= d_factor
-            ct += 1
+            dlogL_dchi = 0
+            ct_chi = 0
+            smooth_chi = 0
+            loss_chi = 0
 
-        if ct < max_iters:
-            ct_d2 = ct
-            smooth_d2 = learning_rate
-            loss = loss_next
-            self.d2 = d2_plus
         else:
-            ct_d2 = np.inf
-            smooth_d2 = 0
-        loss_d2 = loss
+            # smooth_chi
+            ct = 0
+            learning_rate = 1
+            beta = np.exp(self.gamma)  # variable
+            exp_chi = np.exp(self.chi)  # variable
+            G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
+            GBeta = G @ beta  # variable
+            GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
+            lambdainv = 1 / (GBetaBPsi)
+            beta_Bpsi = [beta @ b for k, b in enumerate(B_sparse)]
+            dlogL_dchi = G * np.vstack(
+                [np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1)
+                 for k in range(K)])
+            while ct < max_iters:
+                chi_plus = self.chi + learning_rate * dlogL_dchi
 
-        # set up variables to compute loss in next round
-        s2 = np.exp(self.d2)
-        s2[0, :] = 1
-        s2_norm = (1 / np.sum(s2)) * s2
-        beta_s2_penalty = - tau_beta * np.exp(2 * max_gamma) * (s2_norm.T @ diagBetaDeltaBeta).squeeze()
-        s2_norm_minus_linv = s2_norm - 1 / L
-        s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
+                # set up variables to compute loss
+                chi_plus[0, :] = 0
+                exp_chi = np.exp(chi_plus)  # variable
+                G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
+                GBeta = G @ beta  # didnt change
+                GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
+                lambda_del_t = GBetaBPsi * self.dt
+                # compute loss
+                log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
+
+                # Armijo condition, using Frobenius norm for matrices, but for maximization
+                if (loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dchi, ord='fro') ** 2):
+                    break
+                learning_rate *= G_factor
+                ct += 1
+
+            if ct < max_iters:
+                ct_chi = ct
+                smooth_chi = learning_rate
+                loss = loss_next
+                self.chi = chi_plus
+            else:
+                ct_chi = np.inf
+                smooth_chi = 0
+            loss_chi = loss
+
+            dlogL_dgamma = 0
+            ct_gamma = 0
+            smooth_gamma = 0
+            loss_gamma = 0
+            dlogL_dd1 = 0
+            ct_d1 = 0
+            smooth_d1 = 0
+            loss_d1 = 0
+            dlogL_dd2 = 0
+            ct_d2 = 0
+            smooth_d2 = 0
+            loss_d2 = 0
 
         ################################################################################################################
         # if time_warping:
@@ -388,49 +451,6 @@ class SpikeTrainModel:
         ct_zeta = 0
         loss_zeta = 0
 
-        # smooth_chi
-        ct = 0
-        learning_rate = 1
-        beta = np.exp(self.gamma)  # variable
-        exp_chi = np.exp(self.chi)  # variable
-        G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-        GBeta = G @ beta  # variable
-        GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
-        lambdainv = 1 / (GBetaBPsi)
-        beta_Bpsi = [beta @ b for k, b in enumerate(B_sparse)]
-        dlogL_dchi = G * np.vstack(
-            [np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1)
-             for k in range(K)])
-        while ct < max_iters:
-            chi_plus = self.chi + learning_rate * dlogL_dchi
-
-            # set up variables to compute loss
-            chi_plus[0, :] = 0
-            exp_chi = np.exp(chi_plus)  # variable
-            G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-            GBeta = G @ beta  # didnt change
-            GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-            lambda_del_t = GBetaBPsi * self.dt
-            # compute loss
-            log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
-            loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
-
-            # Armijo condition, using Frobenius norm for matrices, but for maximization
-            if (loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dchi, ord='fro') ** 2):
-                break
-            learning_rate *= G_factor
-            ct += 1
-
-        if ct < max_iters:
-            ct_chi = ct
-            smooth_chi = learning_rate
-            loss = loss_next
-            self.chi = chi_plus
-        else:
-            ct_chi = np.inf
-            smooth_chi = 0
-        loss_chi = loss
-
         result = {
             "dlogL_dgamma": dlogL_dgamma,
             "gamma_loss_increase": loss_gamma - loss_0,
@@ -467,7 +487,7 @@ class SpikeTrainModel:
 
         return result
 
-    def compute_prelim_objects(self, K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping):
+    def compute_prelim_objects(self, K, L, Q, R, tau_psi, tau_beta, tau_s, time_warping):
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)
         psi = exp_alpha_c @ self.U_ones  # variable
         psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # variable, called \psi' in the document

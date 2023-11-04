@@ -20,8 +20,10 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, nu
     # tau_psi = 10000
     # tau_beta = 8000
     # num_epochs = 1000
+    beta_first = 1
 
-    folder_name = f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_reparam'
+    folder_name = (f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}'
+                   f'_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_betaFirst{beta_first}_reparam')
     output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -61,7 +63,8 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, nu
     for epoch in range(num_epochs):
         start_time = time.time()  # Record the start time of the epoch
 
-        result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_s)
+        result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_s, beta_first)
+        beta_first = 1 - beta_first
         likelihood = result["likelihood"]
         likelihoods.append(likelihood)
 
@@ -142,8 +145,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
     parser.add_argument('--tau_beta', type=int, default=1000, help='Value for tau_beta')
-    parser.add_argument('--tau_s', type=int, default=100, help='Value for tau_s')
-    parser.add_argument('--num_epochs', type=int, default=1001, help='Number of training epochs')
+    parser.add_argument('--tau_s', type=int, default=1000, help='Value for tau_s')
+    parser.add_argument('--num_epochs', type=int, default=2000, help='Number of training epochs')
     parser.add_argument('--K', type=int, default=100, help='Number of neurons')
     parser.add_argument('--R', type=int, default=15, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
