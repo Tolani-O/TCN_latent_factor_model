@@ -93,12 +93,17 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
     plot_spikes(binned_spikes, R, output_dir)
     plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
     objects = model.compute_prelim_objects(K, L, Q, R, 0, 0, 0, 1, time_warping)
-    G = objects["G"]
+
+    exp_chi = np.exp(model.chi)  # variable
+    G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
+    beta = np.exp(model.gamma)
+    GBeta = G @ beta  # didnt change
+    B_sparse = objects["B_sparse"]
+    GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
+
     time_matrix = objects["time_matrix"]
     psi_norm = objects["psi_norm"]
     kappa_norm = objects["kappa_norm"]
-    beta = objects["beta"]
-    GBetaBPsi = objects["GBetaBPsi"]
     avg_lambda_intensities = np.mean(GBetaBPsi, axis=0)
     if not time_warping:
         R = 1
