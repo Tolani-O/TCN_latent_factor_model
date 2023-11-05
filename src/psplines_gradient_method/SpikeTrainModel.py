@@ -61,10 +61,10 @@ class SpikeTrainModel:
         self.Omega_psi_B = self.BDelta2TDelta2BT
 
         # variables
-        np.random.seed(0)
+        # np.random.seed(0)
         self.chi = np.random.rand(K, L)
         self.chi[:, 0] = 0
-        np.random.seed(0)
+        # np.random.seed(0)
         self.gamma = np.random.rand(L, P)
         self.alpha = np.zeros((K, Q))
         self.zeta = np.zeros((R, Q))
@@ -80,18 +80,16 @@ class SpikeTrainModel:
                                                                alpha=0.3, max_iters=4):
         # define parameters
         K, L = self.chi.shape
-        R, Q = self.zeta.shape
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, time_warping)
+        objects = self.compute_loss_objects(tau_psi, tau_beta, tau_s, time_warping)
+        # exp_alpha_c = objects["exp_alpha_c"]
+        # exp_zeta_c = objects["exp_zeta_c"]
+        # kappa_norm = objects["kappa_norm"]
+        # psi_norm = objects["psi_norm"]
+        # time_matrix = objects["time_matrix"]
         B_sparse = objects["B_sparse"]
-        exp_alpha_c = objects["exp_alpha_c"]
-        exp_zeta_c = objects["exp_zeta_c"]
-        kappa_norm = objects["kappa_norm"]
-        psi_norm = objects["psi_norm"]
-        time_matrix = objects["time_matrix"]
-        log_likelihood = objects["log_likelihood"]
         psi_penalty = objects["psi_penalty"]
         kappa_penalty = objects["kappa_penalty"]
         beta_s1_penalty = objects["beta_s1_penalty"]
@@ -105,7 +103,7 @@ class SpikeTrainModel:
         sum_exps_chi_plus_gamma_B = objects["sum_exps_chi_plus_gamma_B"]
         max_gamma = objects["max_gamma"]
         beta_minus_max = objects["beta_minus_max"]
-        loss = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
+        loss = objects["loss"]
         loss_0 = loss
 
         if beta_first:
@@ -487,7 +485,9 @@ class SpikeTrainModel:
 
         return result
 
-    def compute_prelim_objects(self, K, L, Q, R, tau_psi, tau_beta, tau_s, time_warping):
+    def compute_loss_objects(self, tau_psi, tau_beta, tau_s, time_warping):
+        K, L = self.chi.shape
+        R, Q = self.zeta.shape
         exp_alpha_c = (np.exp(self.alpha) @ self.alpha_prime_multiply) + np.repeat(self.alpha_prime_add, K, axis=0)
         psi = exp_alpha_c @ self.U_ones  # variable
         psi_norm = (1 / (psi[:, (Q - 1), np.newaxis])) * psi  # variable, called \psi' in the document
@@ -524,6 +524,8 @@ class SpikeTrainModel:
         s2_norm_minus_linv = s2_norm - 1 / L
         s2_penalty = - tau_s * (s2_norm_minus_linv.T @ s2_norm_minus_linv).squeeze()
 
+        loss = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
+
         result = {
             "B_sparse": B_sparse,
             "exp_alpha_c": exp_alpha_c,
@@ -531,6 +533,7 @@ class SpikeTrainModel:
             "kappa_norm": kappa_norm,
             "psi_norm": psi_norm,
             "time_matrix": time_matrix,
+            "loss": loss,
             "log_likelihood": log_likelihood,
             "psi_penalty": psi_penalty,
             "kappa_penalty": kappa_penalty,
@@ -548,35 +551,7 @@ class SpikeTrainModel:
         }
         return result
 
-    def compute_loss_time_warping(self, tau_psi, tau_beta, tau_s, kprime=1, time_warping=False):
-
-        # define parameters
-        K, Q = self.alpha.shape
-        L = self.gamma.shape[0]
-        R = self.trials
-
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping)
-        log_likelihood = objects["log_likelihood"]
-        psi_penalty = objects["psi_penalty"]
-        kappa_penalty = objects["kappa_penalty"]
-        beta_s1_penalty = objects["beta_s1_penalty"]
-        s1_penalty = objects["s1_penalty"]
-        beta_s2_penalty = objects["beta_s2_penalty"]
-        s2_penalty = objects["s2_penalty"]
-        loss = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
-
-        result = {
-            "likelihood": loss,
-            "psi_penalty": psi_penalty,
-            "kappa_penalty": kappa_penalty,
-            "beta_s1_penalty": beta_s1_penalty,
-            "s1_penalty": s1_penalty,
-            "beta_s2_penalty": beta_s2_penalty,
-            "s2_penalty": s2_penalty
-        }
-        return result
-
-    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta, tau_s, kprime=1, time_warping=False):
+    def compute_analytical_grad_time_warping(self, tau_psi, tau_beta, tau_s, time_warping=False):
 
         # define parameters
         K, L = self.chi.shape
@@ -584,7 +559,7 @@ class SpikeTrainModel:
         T = self.time.shape[0]
 
         # set up variables to compute loss
-        objects = self.compute_prelim_objects(K, L, Q, R, tau_psi, tau_beta, tau_s, kprime, time_warping)
+        objects = self.compute_loss_objects(tau_psi, tau_beta, tau_s, time_warping)
         B_sparse = objects["B_sparse"]
         G = objects["G"]
         GBeta = objects["GBeta"]
@@ -654,7 +629,7 @@ class SpikeTrainModel:
 
         return dlogL_dgamma, dlogL_dd1, dlogL_dd2, dlogL_dalpha, dlogL_dzeta, dlogL_dchi
 
-    def compute_grad_chunk(self, name, variable, i, eps, tau_psi, tau_beta, loss):
+    def compute_grad_chunk(self, name, variable, i, eps, tau_psi, tau_beta, tau_s, loss, time_warping=False):
 
         J = variable.shape[1]
         grad_chunk = np.zeros(J)
@@ -664,8 +639,8 @@ class SpikeTrainModel:
         for j in range(J):
             orig = variable[i, j]
             variable[i, j] = orig + eps
-            loss_result = self.compute_loss_time_warping(tau_psi, tau_beta)
-            loss_eps = loss_result['likelihood']
+            objects = self.compute_loss_objects(tau_psi, tau_beta, tau_s, time_warping)
+            loss_eps = objects['loss']
             grad_chunk[j] = (loss_eps - loss) / eps
             variable[i, j] = orig
 
@@ -673,15 +648,15 @@ class SpikeTrainModel:
 
         return grad_chunk
 
-    def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta, time_warping=False):
+    def compute_numerical_grad_time_warping_parallel(self, tau_psi, tau_beta, tau_s, time_warping=False):
 
         eps = 1e-4
         # define parameters
         K, L = self.chi.shape
         R = self.trials
 
-        loss_result = self.compute_loss_time_warping(tau_psi, tau_beta)
-        loss = loss_result['likelihood']
+        objects = self.compute_loss_objects(tau_psi, tau_beta, tau_s)
+        loss = objects['loss']
         pool = mp.Pool()
 
         # alpha gradient

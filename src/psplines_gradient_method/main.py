@@ -2,15 +2,16 @@ import os
 import sys
 sys.path.append(os.path.abspath('.'))
 
+import numpy as np
 import pickle
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
-from src.psplines_gradient_method.general_functions import plot_outputs
+from src.psplines_gradient_method.general_functions import plot_outputs, plot_spikes, plot_intensity_and_latents
 import time
 import argparse
 
 
-def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, num_epochs):
+def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs):
     # K = 100
     # R = 15
     # L = 3
@@ -20,10 +21,11 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, nu
     # tau_psi = 10000
     # tau_beta = 8000
     # num_epochs = 1000
-    beta_first = 1
 
     folder_name = (f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}'
-                   f'_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_betaFirst{beta_first}_reparam')
+                   f'_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_betaFirst{beta_first}'
+                   f'_notes-{notes}_reparam')
+    print(f'folder_name: {folder_name}')
     output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -33,10 +35,14 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, nu
 
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
     binned, stim_time = data.sample_data()
+    true_likelihood = data.likelihood()
+    plot_spikes(binned, output_dir)
+    plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
     Y = binned  # K x T
     degree = 3
     # L = self.latent_factors.shape[0] #- 1
     model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
+
     # Training parameters
 
     likelihoods = []
@@ -146,12 +152,13 @@ if __name__ == "__main__":
     parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
     parser.add_argument('--tau_beta', type=int, default=1000, help='Value for tau_beta')
     parser.add_argument('--tau_s', type=int, default=1000, help='Value for tau_s')
-    parser.add_argument('--num_epochs', type=int, default=2000, help='Number of training epochs')
+    parser.add_argument('--num_epochs', type=int, default=2001, help='Number of training epochs')
+    parser.add_argument('--beta_first', type=int, default=1, help='Whether to update beta first or G first')
     parser.add_argument('--K', type=int, default=100, help='Number of neurons')
     parser.add_argument('--R', type=int, default=15, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
     parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
-    parser.add_argument('--intensity_bias', type=float, default=0.1, help='Latent factor intensity bias')
+    parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
 
     args = parser.parse_args()
     K = args.K
@@ -163,5 +170,8 @@ if __name__ == "__main__":
     tau_beta = args.tau_beta
     tau_s = args.tau_s
     num_epochs = args.num_epochs
+    beta_first = args.beta_first
+    notes = 'empty'
 
-    training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, num_epochs)
+    training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi,
+                                                         tau_beta, tau_s, beta_first, notes, num_epochs)

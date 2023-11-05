@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.figure import figaspect
 from scipy.interpolate import BSpline
 
 
@@ -37,16 +38,18 @@ def create_second_diff_matrix(P):
     return D
 
 
-def plot_spikes(spikes, trials, output_dir, x_offset=0):
+def plot_spikes(binned, output_dir, x_offset=0):
     # Group entries by unique values of s[0]
+    spikes = np.where(binned >= 1)
     unique_s_0 = np.unique(spikes[0])
     grouped_s = []
     for i in unique_s_0:
         indices = np.where(spikes[0] == i)[0]
         values = (spikes[1][indices] - x_offset)/1000
         grouped_s.append((i, values))
-    # plt.figure(figsize=(40*trials, (10/3)*trials))
-    plt.figure()
+    aspect_ratio = binned.shape[0] / binned.shape[1]
+    w, h = figaspect(aspect_ratio)
+    plt.figure(figsize=(w, h))
     for group in grouped_s:
         plt.scatter(group[1], np.zeros_like(group[1]) + group[0], s=1, c='black')
     plt.savefig(os.path.join(output_dir, 'groundTruth_spikes.png'))
@@ -70,7 +73,7 @@ def plot_intensity_and_latents(time, latent_factors, intensity, output_dir):
     # plot neuron intensities
     plt.figure()
     for i in range(intensity.shape[0]):
-        plt.plot(time, intensity[i, :] + i * 0.1)
+        plt.plot(time, intensity[i, :time.shape[0]] + i * 1)
     plt.savefig(os.path.join(output_dir, 'groundTruth_intensities.png'))
 
 
@@ -89,21 +92,16 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
     K, L = model.chi.shape
     stim_time = model.time
     T = stim_time.shape[0]
-    binned_spikes = np.where(model.Y >= 1)
-    plot_spikes(binned_spikes, R, output_dir)
-    plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
-    objects = model.compute_prelim_objects(K, L, Q, R, 0, 0, 0, time_warping)
-
+    objects = model.compute_loss_objects(K, L, Q, R, 0, 0, 0, time_warping)
+    time_matrix = objects["time_matrix"]
+    psi_norm = objects["psi_norm"]
+    kappa_norm = objects["kappa_norm"]
+    B_sparse = objects["B_sparse"]
     exp_chi = np.exp(model.chi)  # variable
     G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
     beta = np.exp(model.gamma)
     GBeta = G @ beta  # didnt change
-    B_sparse = objects["B_sparse"]
     GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
-
-    time_matrix = objects["time_matrix"]
-    psi_norm = objects["psi_norm"]
-    kappa_norm = objects["kappa_norm"]
     avg_lambda_intensities = np.mean(GBetaBPsi, axis=0)
     if not time_warping:
         R = 1
