@@ -1,6 +1,6 @@
-import os
 import numpy as np
-import matplotlib.pyplot as plt
+from scipy.sparse import csr_array
+from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_second_diff_matrix
 
 
 class DataAnalyzer:
@@ -10,15 +10,16 @@ class DataAnalyzer:
         self.latent_factors = None
         self.intensity = None
         self.binned = None
+        self.latent_coupling = None
 
 
     def initialize(self, K=100, T=200, R=3, intensity_type=('constant', '1peak', '2peaks'),
-                   coeff=(0.1, 0.13, 0.13), bias=(-3, -3, -3), ratio=(1/3, 1/3, 1/3),
+                   coeff=(1, 1, 1), ratio=(1/3, 1/3, 1/3),
                    intensity_mltply=15, intensity_bias=5, max_offset=0):
         self.time = np.arange(0, T, 1) / 100
         self.latent_factors = self.generate_latent_factors(intensity_type, intensity_mltply, intensity_bias)
         # np.random.seed(0)
-        self.intensity, self.binned = self.generate_spike_trains(coeff, bias, ratio, K, R, max_offset)
+        self.intensity, self.binned, self.latent_coupling = self.generate_spike_trains(coeff, ratio, K, R, max_offset)
         return self
 
     def generate_latent_factors(self, intensity_type, intensity_mltply, intensity_bias):
@@ -55,7 +56,7 @@ class DataAnalyzer:
         return latent_factors
 
 
-    def generate_spike_trains(self, coeff, bias, ratio, num_neurons, num_trials, max_offset):
+    def generate_spike_trains(self, coeff, ratio, num_neurons, num_trials, max_offset):
 
         latent_factors = self.latent_factors
         num_factors, num_timesteps = latent_factors.shape
@@ -68,6 +69,7 @@ class DataAnalyzer:
         ratio = ratio / np.sum(ratio)
 
         intensity = np.zeros((num_neurons, num_trials*num_timesteps))
+        latent_coupling = np.zeros((num_neurons, num_factors))
         binned = np.zeros((num_neurons, num_trials*num_timesteps))
         latent_factor_trials = np.hstack([latent_factors] * num_trials)
         dt = round(self.time[1] - self.time[0], 3)
@@ -75,7 +77,8 @@ class DataAnalyzer:
         # loop over the rows of latent_factors
         for i in range(num_factors):
             neuron_count = int(num_neurons * ratio[i])
-            intensity[last_binned_index:(last_binned_index+neuron_count), :] = np.vstack([latent_factor_trials[i, :]] * neuron_count)
+            intensity[last_binned_index:(last_binned_index+neuron_count), :] = np.vstack([coeff[i] * latent_factor_trials[i, :]] * neuron_count)
+            latent_coupling[last_binned_index:(last_binned_index+neuron_count), i] = 1
             # Add random integer offset to each row of intensity
             for j in range(last_binned_index, last_binned_index + neuron_count):
                 offset = np.random.randint(-max_offset, max_offset + 1)  # Random offset between -max_offset and max_offset
@@ -86,16 +89,22 @@ class DataAnalyzer:
         # pick only the first last_binned_index rows of binned
         binned = binned[:last_binned_index, :]
         intensity = intensity[:last_binned_index, :]
+        latent_coupling = latent_coupling[:last_binned_index, :]
 
-        return intensity, binned
+        return intensity, binned, latent_coupling
 
 
     def sample_data(self):
         return self.binned, self.time
 
-    def likelihood(self):
+    def likelihood(self, tau_beta):
         intensity = self.intensity
         binned = self.binned
+        T = self.time.shape[0]
+        Delta1 = csr_array(create_first_diff_matrix(T))
+        Delta2 = csr_array(create_second_diff_matrix(T))
         dt = round(self.time[1] - self.time[0], 3)
         likelihood = np.sum(np.log(intensity) * binned - intensity * dt)
-        return likelihood
+        beta_s1_penalty = - tau_beta * 1/self.latent_factors.shape[0] * np.sum((Delta1 @ self.latent_factors.T)**2)
+        beta_s2_penalty = - tau_beta * 1/self.latent_factors.shape[0] * np.sum((Delta2 @ self.latent_factors.T)**2)
+        return likelihood, beta_s1_penalty, beta_s2_penalty

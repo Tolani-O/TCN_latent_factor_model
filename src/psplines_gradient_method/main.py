@@ -2,7 +2,6 @@ import os
 import sys
 sys.path.append(os.path.abspath('.'))
 
-import numpy as np
 import pickle
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
@@ -35,7 +34,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
     binned, stim_time = data.sample_data()
-    true_likelihood = data.likelihood()
+    true_likelihood, beta_s1_penalty, beta_s2_penalty = data.likelihood(tau_beta)
     plot_spikes(binned, output_dir)
     plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
     Y = binned  # K x T
@@ -141,7 +140,10 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
     training_results = {
         "model": model,
-        "data": data
+        "data": data,
+        "true_likelihood": true_likelihood,
+        "beta_s1_penalty": beta_s1_penalty,
+        "beta_s2_penalty": beta_s1_penalty
     }
     return training_results, metrics_results, output_dir
 
@@ -153,7 +155,7 @@ if __name__ == "__main__":
     parser.add_argument('--tau_beta', type=int, default=1000, help='Value for tau_beta')
     parser.add_argument('--tau_s', type=int, default=1000, help='Value for tau_s')
     parser.add_argument('--num_epochs', type=int, default=2001, help='Number of training epochs')
-    parser.add_argument('--beta_first', type=int, default=1, help='Whether to update beta first or G first')
+    parser.add_argument('--beta_first', type=int, default=0, help='Whether to update beta first or G first')
     parser.add_argument('--K', type=int, default=100, help='Number of neurons')
     parser.add_argument('--R', type=int, default=15, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
