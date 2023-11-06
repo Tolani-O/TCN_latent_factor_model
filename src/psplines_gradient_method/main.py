@@ -34,7 +34,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
     binned, stim_time = data.sample_data()
-    true_likelihood, beta_s1_penalty, beta_s2_penalty = data.likelihood(tau_beta)
+    true_likelihood, beta_s2_penalty = data.likelihood(tau_beta)
     plot_spikes(binned, output_dir)
     plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
     Y = binned  # K x T
@@ -47,19 +47,19 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     likelihoods = []
     alpha_loss_increase = []
     gamma_loss_increase = []
-    d1_loss_increase = []
+    c_loss_increase = []
     d2_loss_increase = []
     zeta_loss_increase = []
     chi_loss_increase = []
     alpha_learning_rate = []
     gamma_learning_rate = []
-    d1_learning_rate = []
+    c_learning_rate = []
     d2_learning_rate = []
     zeta_learning_rate = []
     chi_learning_rate = []
     alpha_iters = []
     gamma_iters = []
-    d1_iters = []
+    c_iters = []
     d2_iters = []
     zeta_iters = []
     chi_iters = []
@@ -75,21 +75,21 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
         alpha_loss_increase.append(result["alpha_loss_increase"])
         gamma_loss_increase.append(result["gamma_loss_increase"])
-        d1_loss_increase.append(result["d1_loss_increase"])
+        c_loss_increase.append(result["c_loss_increase"])
         d2_loss_increase.append(result["d2_loss_increase"])
         zeta_loss_increase.append(result["zeta_loss_increase"])
         chi_loss_increase.append(result["chi_loss_increase"])
 
         alpha_learning_rate.append(result["smooth_alpha"])
         gamma_learning_rate.append(result["smooth_gamma"])
-        d1_learning_rate.append(result["smooth_d1"])
+        c_learning_rate.append(result["smooth_c"])
         d2_learning_rate.append(result["smooth_d2"])
         zeta_learning_rate.append(result["smooth_zeta"])
         chi_learning_rate.append(result["smooth_chi"])
 
         alpha_iters.append(result["iters_alpha"])
         gamma_iters.append(result["iters_gamma"])
-        d1_iters.append(result["iters_d1"])
+        c_iters.append(result["iters_c"])
         d2_iters.append(result["iters_d2"])
         zeta_iters.append(result["iters_zeta"])
         chi_iters.append(result["iters_chi"])
@@ -120,19 +120,19 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         "likelihoods": likelihoods,
         "alpha_loss_increase": alpha_loss_increase,
         "gamma_loss_increase": gamma_loss_increase,
-        "d1_loss_increase": d1_loss_increase,
+        "c_loss_increase": c_loss_increase,
         "d2_loss_increase": d2_loss_increase,
         "zeta_loss_increase": zeta_loss_increase,
         "chi_loss_increase": chi_loss_increase,
         "alpha_learning_rate": alpha_learning_rate,
         "gamma_learning_rate": gamma_learning_rate,
-        "d1_learning_rate": d1_learning_rate,
+        "c_learning_rate": c_learning_rate,
         "d2_learning_rate": d2_learning_rate,
         "zeta_learning_rate": zeta_learning_rate,
         "chi_learning_rate": chi_learning_rate,
         "alpha_iters": alpha_iters,
         "gamma_iters": gamma_iters,
-        "d1_iters": d1_iters,
+        "c_iters": c_iters,
         "d2_iters": d2_iters,
         "zeta_iters": zeta_iters,
         "chi_iters": chi_iters
@@ -142,7 +142,6 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         "model": model,
         "data": data,
         "true_likelihood": true_likelihood,
-        "beta_s1_penalty": beta_s1_penalty,
         "beta_s2_penalty": beta_s1_penalty
     }
     return training_results, metrics_results, output_dir
@@ -152,12 +151,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run the Python script from the command line.')
 
     parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
-    parser.add_argument('--tau_beta', type=int, default=1000, help='Value for tau_beta')
-    parser.add_argument('--tau_s', type=int, default=1000, help='Value for tau_s')
-    parser.add_argument('--num_epochs', type=int, default=2001, help='Number of training epochs')
+    parser.add_argument('--tau_beta', type=int, default=5000, help='Value for tau_beta')
+    parser.add_argument('--tau_s', type=int, default=15000, help='Value for tau_s')
+    parser.add_argument('--num_epochs', type=int, default=1500, help='Number of training epochs')
     parser.add_argument('--beta_first', type=int, default=0, help='Whether to update beta first or G first')
-    parser.add_argument('--K', type=int, default=100, help='Number of neurons')
-    parser.add_argument('--R', type=int, default=15, help='Number of trials')
+    parser.add_argument('--notes', type=str, default='empty', help='Run notes')
+    parser.add_argument('--K', type=int, default=200, help='Number of neurons')
+    parser.add_argument('--R', type=int, default=50, help='Number of trials')
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
     parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
     parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     tau_s = args.tau_s
     num_epochs = args.num_epochs
     beta_first = args.beta_first
-    notes = 'empty'
+    notes = args.notes
 
     training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi,
                                                          tau_beta, tau_s, beta_first, notes, num_epochs)

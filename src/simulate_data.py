@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.sparse import csr_array
-from src.psplines_gradient_method.general_functions import create_first_diff_matrix, create_second_diff_matrix
+from src.psplines_gradient_method.general_functions import create_second_diff_matrix
 
 
 class DataAnalyzer:
@@ -101,10 +101,8 @@ class DataAnalyzer:
         intensity = self.intensity
         binned = self.binned
         T = self.time.shape[0]
-        Delta1 = csr_array(create_first_diff_matrix(T))
         Delta2 = csr_array(create_second_diff_matrix(T))
         dt = round(self.time[1] - self.time[0], 3)
         likelihood = np.sum(np.log(intensity) * binned - intensity * dt)
-        beta_s1_penalty = - tau_beta * 1/self.latent_factors.shape[0] * np.sum((Delta1 @ self.latent_factors.T)**2)
         beta_s2_penalty = - tau_beta * 1/self.latent_factors.shape[0] * np.sum((Delta2 @ self.latent_factors.T)**2)
-        return likelihood, beta_s1_penalty, beta_s2_penalty
+        return likelihood, beta_s2_penalty
