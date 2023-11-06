@@ -14,6 +14,7 @@ class SpikeTrainModel:
         self.zeta = None
         self.d1 = None
         self.d2 = None
+        self.c = None
 
         # parameters
         self.Y = Y
@@ -64,6 +65,7 @@ class SpikeTrainModel:
         # np.random.seed(0)
         self.chi = np.random.rand(K, L)
         self.chi[:, 0] = 0
+        self.c = np.random.rand(K, L)
         # np.random.seed(0)
         self.gamma = np.random.rand(L, P)
         self.alpha = np.zeros((K, Q))
@@ -110,7 +112,7 @@ class SpikeTrainModel:
             # smooth_gamma
             ct = 0
             learning_rate = 1
-            exp_chi = np.vstack([np.exp(self.chi[k] - maxes[k]) for k in range(K)])  # variable
+            exp_chi = np.vstack([np.exp(self.chi[k] + self.c[k] - maxes[k]) for k in range(K)])  # variable
             likelihood_component = exp_chi.T @ np.vstack([(1/(sum_exps_chi_plus_gamma_B[k]) * self.Y[k] - 1/sum_exps_chi[k] * self.dt) @ b.transpose() for k, b in enumerate(B_sparse)])
             s1_component = s1_norm * beta_minus_max @ self.BDelta1TDelta1BT
             s2_component = s2_norm * beta_minus_max @ self.BDelta2TDelta2BT
@@ -119,9 +121,9 @@ class SpikeTrainModel:
                 gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 
                 # set up variables to compute loss
-                maxes = [np.max(self.chi[k][:, np.newaxis] + gamma_plus) for k in range(K)]
+                maxes = [np.max(self.chi[k][:, np.newaxis] + self.c[k][:, np.newaxis] + gamma_plus) for k in range(K)]
                 sum_exps_chi = [np.sum(np.exp(self.chi[k] - maxes[k])) for k in range(K)]
-                sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + gamma_plus - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
+                sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + self.c[k][:, np.newaxis] + gamma_plus - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
                 log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
                                (1 / sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
                 max_gamma = np.max(gamma_plus)
@@ -146,9 +148,9 @@ class SpikeTrainModel:
             loss_gamma = loss
 
             # set up variables to compute loss in next round
-            maxes = [np.max(self.chi[k][:, np.newaxis] + self.gamma) for k in range(K)]
+            maxes = [np.max(self.chi[k][:, np.newaxis] + self.c[k][:, np.newaxis] + self.gamma) for k in range(K)]
             sum_exps_chi = [np.sum(np.exp(self.chi[k] - maxes[k])) for k in range(K)]
-            sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + self.gamma - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
+            sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + self.c[k][:, np.newaxis] + self.gamma - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
             log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
                            (1 / sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
             max_gamma = np.max(self.gamma)
@@ -244,6 +246,10 @@ class SpikeTrainModel:
             ct_chi = 0
             smooth_chi = 0
             loss_chi = 0
+            dlogL_dc = 0
+            ct_c = 0
+            smooth_c = 0
+            loss_c = 0
 
         else:
             # smooth_chi
@@ -252,12 +258,11 @@ class SpikeTrainModel:
             beta = np.exp(self.gamma)  # variable
             exp_chi = np.exp(self.chi)  # variable
             G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-            GBeta = G @ beta  # variable
-            GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
-            lambdainv = 1 / (GBetaBPsi)
-            beta_Bpsi = [beta @ b for k, b in enumerate(B_sparse)]
+            E = np.exp(self.c)  # variable
+            E_beta_Bpsi = [E[k][:, np.newaxis] * beta @ b for k, b in enumerate(B_sparse)]
+            GEBetaBPsi = [G[k][np.newaxis, :] @ e for k, e in enumerate(E_beta_Bpsi)]
             dlogL_dchi = G * np.vstack(
-                [np.sum((lambdainv[k] * beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ beta_Bpsi[k] * self.dt, axis=1)
+                [np.sum((1/GEBetaBPsi[k] * E_beta_Bpsi[k] - 1) * self.Y[k] - (np.eye(L) - G[k]) @ E_beta_Bpsi[k] * self.dt, axis=1)
                  for k in range(K)])
             while ct < max_iters:
                 chi_plus = self.chi + learning_rate * dlogL_dchi
@@ -266,11 +271,9 @@ class SpikeTrainModel:
                 chi_plus[0, :] = 0
                 exp_chi = np.exp(chi_plus)  # variable
                 G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
-                GBeta = G @ beta  # didnt change
-                GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])  # variable
-                lambda_del_t = GBetaBPsi * self.dt
+                GEBetaBPsi = np.vstack([G[k] @ e for k, e in enumerate(E_beta_Bpsi)])
                 # compute loss
-                log_likelihood = np.sum(np.log(GBetaBPsi) * self.Y - lambda_del_t)
+                log_likelihood = np.sum(np.log(GEBetaBPsi) * self.Y - GEBetaBPsi * self.dt)
                 loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
 
                 # Armijo condition, using Frobenius norm for matrices, but for maximization
@@ -288,6 +291,37 @@ class SpikeTrainModel:
                 ct_chi = np.inf
                 smooth_chi = 0
             loss_chi = loss
+
+            # smooth_c
+            ct = 0
+            learning_rate = 1
+            dlogL_dc = np.exp(self.chi + self.c - 2*np.vstack(maxes)) * np.vstack([((1/sum_exps_chi_plus_gamma_B[k] * self.Y[k] -
+                       1/sum_exps_chi[k] * self.dt) @ b.transpose()) @ np.exp(self.gamma - maxes[k]).T for k, b in enumerate(B_sparse)])
+            while ct < max_iters:
+                c_plus = self.c + learning_rate * dlogL_dc
+
+                # set up variables to compute loss
+                maxes = [np.max(self.chi[k][:, np.newaxis] + c_plus[k][:, np.newaxis] + self.gamma) for k in range(K)]
+                sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:, np.newaxis] + c_plus[k][:, np.newaxis] + self.gamma - maxes[k]), axis=0)[np.newaxis, :] @ b for k, b in enumerate(B_sparse)]
+                log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
+                               (1 / sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
+                loss_next = log_likelihood + psi_penalty + kappa_penalty + beta_s1_penalty + s1_penalty + beta_s2_penalty + s2_penalty
+
+                # Armijo condition, using Frobenius norm for matrices, but for maximization
+                if (loss_next >= loss + alpha * learning_rate * np.linalg.norm(dlogL_dc, ord='fro') ** 2):
+                    break
+                learning_rate *= G_factor
+                ct += 1
+
+            if ct < max_iters:
+                ct_c = ct
+                smooth_c = learning_rate
+                loss = loss_next
+                self.c = c_plus
+            else:
+                ct_c = np.inf
+                smooth_c = 0
+            loss_c = loss
 
             dlogL_dgamma = 0
             ct_gamma = 0
@@ -474,6 +508,10 @@ class SpikeTrainModel:
             "chi_loss_increase": loss_chi - loss_zeta,
             "smooth_chi": smooth_chi,
             "iters_chi": ct_chi,
+            "dlogL_dc": dlogL_dc,
+            "c_loss_increase": loss_c - loss_chi,
+            "smooth_c": smooth_c,
+            "iters_c": ct_c,
             "likelihood": loss,
             "beta_s1_penalty": beta_s1_penalty,
             "s1_penalty": s1_penalty,
@@ -496,9 +534,9 @@ class SpikeTrainModel:
         kappa_norm = (1 / (kappa[:, (Q - 1), np.newaxis])) * kappa  # variable, called \kappa' in the document
         time_matrix = 0.5 * max(self.time) * np.hstack( [(psi_norm + kappa_norm[r]) @ self.V for r in range(R)])  # variable
         B_sparse = [BSpline.design_matrix(time, self.knots, self.degree).transpose() for time in time_matrix]  # variable
-        maxes = [np.max(self.chi[k][:,np.newaxis] + self.gamma) for k in range(K)]
+        maxes = [np.max(self.chi[k][:,np.newaxis] + self.c[k][:,np.newaxis] + self.gamma) for k in range(K)]
         sum_exps_chi = [np.sum(np.exp(self.chi[k] - maxes[k])) for k in range(K)]
-        sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:,np.newaxis] + self.gamma - maxes[k]), axis=0)[np.newaxis,:] @ b for k, b in enumerate(B_sparse)]
+        sum_exps_chi_plus_gamma_B = [np.sum(np.exp(self.chi[k][:,np.newaxis] + self.c[k][:,np.newaxis]  + self.gamma - maxes[k]), axis=0)[np.newaxis,:] @ b for k, b in enumerate(B_sparse)]
         log_likelihood = np.sum(np.vstack([(np.log(sum_exps_chi_plus_gamma_B[k]) - np.log(sum_exps_chi[k])) * self.Y[k] -
                                            (1/sum_exps_chi[k] * sum_exps_chi_plus_gamma_B[k]) * self.dt for k in range(K)]))
         if time_warping:

@@ -92,7 +92,7 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
     K, L = model.chi.shape
     stim_time = model.time
     T = stim_time.shape[0]
-    objects = model.compute_loss_objects(K, L, Q, R, 0, 0, 0, time_warping)
+    objects = model.compute_loss_objects(0, 0, 0, time_warping)
     time_matrix = objects["time_matrix"]
     psi_norm = objects["psi_norm"]
     kappa_norm = objects["kappa_norm"]
@@ -100,14 +100,16 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
     exp_chi = np.exp(model.chi)  # variable
     G = (1 / np.sum(exp_chi, axis=1).reshape(-1, 1)) * exp_chi  # variable
     beta = np.exp(model.gamma)
-    GBeta = G @ beta  # didnt change
-    GBetaBPsi = np.vstack([GBeta[k] @ b for k, b in enumerate(B_sparse)])
-    avg_lambda_intensities = np.mean(GBetaBPsi, axis=0)
+    E = np.exp(model.c)  # variable
+    E_beta_Bpsi = [E[k][:, np.newaxis] * beta @ b for k, b in enumerate(B_sparse)]
+    GEBetaBPsi = np.vstack([G[k] @ e for k, e in enumerate(E_beta_Bpsi)])
+    avg_lambda_intensities = np.mean(GEBetaBPsi, axis=0)
     if not time_warping:
         R = 1
     plt.figure()
     for i in range(R):
         plt.plot(stim_time, avg_lambda_intensities[i * T:(i + 1) * T] + i * 0.01)
+    plt.ylim(bottom=0)
     plt.savefig(os.path.join(output_dir, f'main_AvgLambdaIntensities.png'))
     latent_factors = beta @ model.V
     plt.figure()
@@ -115,6 +117,7 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
         # plt.plot(np.concatenate([[stim_time[0] - 0.02, stim_time[0] - 0.01], stim_time]), model.beta[i, :])
         plt.plot(stim_time, latent_factors[i, :], label=f'Factor [{i}, :]')
         plt.title(f'Factors')
+    plt.ylim(bottom=0)
     plt.savefig(os.path.join(output_dir, f'main_LatentFactors.png'))
     time_matrix_psi = max(model.time) * (psi_norm @ model.V)
     for i in range(0, model.Y.shape[0], batch):
@@ -122,14 +125,18 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
         plt.figure()
         for j in range(this_batch):
             plt.plot(stim_time, time_matrix_psi[i + j, :] + i * 0.05)
+        plt.ylim(bottom=0)
         plt.savefig(os.path.join(output_dir, f'main_TimeMatrixPsi_batch{i}.png'))
     time_matrix_kappa = max(model.time) * (kappa_norm @ model.V)
     plt.figure()
     for i in range(R):
         plt.plot(stim_time, time_matrix_kappa[i, :] + i * 0.1)
+    plt.ylim(bottom=0)
     plt.savefig(os.path.join(output_dir, f'main_TimeMatrixKappa.png'))
     B_sparse_kappa = [BSpline.design_matrix(time, model.knots, model.degree).transpose() for time in time_matrix_kappa]
     latent_factors_kappa = [beta @ b for b in B_sparse_kappa]
+    global_max = np.max(GEBetaBPsi)
+    upper_limit = global_max * 1.1
     for r in range(R):
         for i in range(0, model.Y.shape[0], batch):
             this_batch = batch if i + batch < model.Y.shape[0] else model.Y.shape[0] - i
@@ -137,16 +144,18 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
             plt.figure()
             for j in range(this_batch):
                 plt.plot(stim_time, time_matrix[i + j, r * T:(r + 1) * T] + i * 0.01)
+            plt.ylim(bottom=0)
             plt.savefig(os.path.join(output_dir, f'main_TimeMatrix_Trial{r}_batch{i}.png'))
 
             plt.figure(figsize=(10, 10))
             sorted_indices = sorted(range(this_batch), key=lambda j: np.argmax(G[i + j]), reverse=True)
             for k, j in enumerate(sorted_indices):
                 plt.subplot(2, 1, 1)
-                plt.plot(stim_time, GBetaBPsi[i + j, r * T:(r + 1) * T] + k * 0.0,
+                plt.plot(stim_time, GEBetaBPsi[i + j, r * T:(r + 1) * T] + k * 0.0,
                          label=f'I={i + j}, C={np.argmax(G[i + j])}, V={round(np.max(G[i + j]), 2)}')
+                plt.ylim(bottom=0, top=upper_limit)
                 plt.subplot(2, 1, 2)
-                plt.plot(stim_time, data.intensity[i + j, :] + k * 0.1, label=f'I={i + j}')
+                plt.plot(stim_time, data.intensity[i + j, :stim_time.shape[0]] + k * 1, label=f'I={i + j}')
             plt.subplot(2, 1, 1)
             plt.legend()
             plt.subplot(2, 1, 2)
