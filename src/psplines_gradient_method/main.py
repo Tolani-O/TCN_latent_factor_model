@@ -6,11 +6,12 @@ import pickle
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
 from src.psplines_gradient_method.general_functions import plot_outputs, plot_spikes, plot_intensity_and_latents
+import numpy as np
 import time
 import argparse
 
 
-def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs):
+def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs, seed):
     # K = 100
     # R = 15
     # L = 3
@@ -23,7 +24,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
     folder_name = (f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}'
                    f'_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_betaFirst{beta_first}'
-                   f'_notes-{notes}_reparam')
+                   f'_seed{seed}_notes-{notes}_reparam')
     print(f'folder_name: {folder_name}')
     output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
     if not os.path.exists(output_dir):
@@ -142,7 +143,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         "model": model,
         "data": data,
         "true_likelihood": true_likelihood,
-        "beta_s2_penalty": beta_s1_penalty
+        "beta_s2_penalty": beta_s2_penalty
     }
     return training_results, metrics_results, output_dir
 
@@ -175,5 +176,6 @@ if __name__ == "__main__":
     beta_first = args.beta_first
     notes = args.notes
 
+    seed = np.random.randint(0, 2**32 - 1)
     training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi,
-                                                         tau_beta, tau_s, beta_first, notes, num_epochs)
+                                                         tau_beta, tau_s, beta_first, notes, num_epochs, seed)

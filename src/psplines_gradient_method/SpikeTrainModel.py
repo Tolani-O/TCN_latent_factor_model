@@ -12,7 +12,6 @@ class SpikeTrainModel:
         self.gamma = None
         self.alpha = None
         self.zeta = None
-        self.d1 = None
         self.d2 = None
         self.c = None
 
@@ -32,7 +31,7 @@ class SpikeTrainModel:
         self.Omega_psi_B = None
         self.degree = None
 
-    def initialize_for_time_warping(self, L, degree):
+    def initialize_for_time_warping(self, L, degree, seed=None):
 
         # parameters
         K = self.Y.shape[0]
@@ -60,11 +59,11 @@ class SpikeTrainModel:
         self.Omega_psi_B = self.BDelta2TDelta2BT
 
         # variables
-        # np.random.seed(0)
+        if seed:
+            np.random.seed(seed)
         self.chi = np.random.rand(K, L)
         self.chi[:, 0] = 0
         self.c = np.random.rand(K, L)
-        # np.random.seed(0)
         self.gamma = np.random.rand(L, P)
         self.gamma[(L-1), :] = 0
         self.alpha = np.zeros((K, Q))
