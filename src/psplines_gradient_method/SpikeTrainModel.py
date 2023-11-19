@@ -31,7 +31,7 @@ class SpikeTrainModel:
         self.Omega_psi_B = None
         self.degree = None
 
-    def initialize_for_time_warping(self, L, degree, seed=None):
+    def initialize_for_time_warping(self, L, degree):
 
         # parameters
         K = self.Y.shape[0]
@@ -59,13 +59,11 @@ class SpikeTrainModel:
         self.Omega_psi_B = self.BDelta2TDelta2BT
 
         # variables
-        if seed:
-            np.random.seed(seed)
         self.chi = np.random.rand(K, L)
         self.chi[:, 0] = 0
         self.c = np.random.rand(K, L)
         self.gamma = np.random.rand(L, P)
-        self.gamma[(L-1), :] = 0
+        self.gamma[0, :] = 0
         self.alpha = np.zeros((K, Q))
         self.zeta = np.zeros((R, Q))
         self.d2 = np.zeros((L, 1))
@@ -101,6 +99,7 @@ class SpikeTrainModel:
         max_gamma = objects["max_gamma"]
         beta_minus_max = objects["beta_minus_max"]
         loss = objects["loss"]
+        log_likelihood_cache = objects["log_likelihood"]
         loss_0 = loss
 
         if beta_first:
@@ -111,6 +110,7 @@ class SpikeTrainModel:
             likelihood_component = exp_chi.T @ np.vstack([(1/(sum_exps_chi_plus_gamma_B[k]) * self.Y[k] - 1/sum_exps_chi[k] * self.dt) @ b.transpose() for k, b in enumerate(B_sparse)])
             s2_component = s2_norm * beta_minus_max @ self.BDelta2TDelta2BT
             dlogL_dgamma = beta_minus_max * np.exp(max_gamma) * (likelihood_component - 2 * tau_beta * np.exp(max_gamma) * s2_component)
+            learning_rate *= gamma_factor
             while ct < max_iters:
                 gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 
@@ -135,6 +135,7 @@ class SpikeTrainModel:
                 smooth_gamma = learning_rate
                 loss = loss_next
                 self.gamma = gamma_plus
+                log_likelihood_cache = log_likelihood
             else:
                 ct_gamma = np.inf
                 smooth_gamma = 0
@@ -235,6 +236,7 @@ class SpikeTrainModel:
                 smooth_chi = learning_rate
                 loss = loss_next
                 self.chi = chi_plus
+                log_likelihood_cache = log_likelihood
             else:
                 ct_chi = np.inf
                 smooth_chi = 0
@@ -267,6 +269,7 @@ class SpikeTrainModel:
                 smooth_c = learning_rate
                 loss = loss_next
                 self.c = c_plus
+                log_likelihood_cache = log_likelihood
             else:
                 ct_c = np.inf
                 smooth_c = 0
@@ -453,7 +456,8 @@ class SpikeTrainModel:
             "c_loss_increase": loss_c - loss_chi,
             "smooth_c": smooth_c,
             "iters_c": ct_c,
-            "likelihood": loss,
+            "loss": loss,
+            "log_likelihood": log_likelihood_cache,
             "beta_s2_penalty": beta_s2_penalty,
             "s2_penalty": s2_penalty,
             "psi_penalty": psi_penalty,

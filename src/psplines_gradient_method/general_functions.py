@@ -87,7 +87,7 @@ def plot_bsplines(B, time, output_dir):
     plt.savefig(os.path.join(output_dir, 'groundTruth_bsplines.png'))
 
 
-def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
+def plot_outputs(model, data, output_dir, epoch, batch=10, time_warping=False):
     R, Q = model.zeta.shape
     K, L = model.chi.shape
     stim_time = model.time
@@ -118,7 +118,7 @@ def plot_outputs(model, data, output_dir, batch=10, time_warping=False):
         plt.plot(stim_time, latent_factors[i, :], label=f'Factor [{i}, :]')
         plt.title(f'Factors')
     plt.ylim(bottom=0)
-    plt.savefig(os.path.join(output_dir, f'main_LatentFactors.png'))
+    plt.savefig(os.path.join(output_dir, f'main_LatentFactors_{epoch}.png'))
     time_matrix_psi = max(model.time) * (psi_norm @ model.V)
     for i in range(0, model.Y.shape[0], batch):
         this_batch = batch if i + batch < model.Y.shape[0] else model.Y.shape[0] - i

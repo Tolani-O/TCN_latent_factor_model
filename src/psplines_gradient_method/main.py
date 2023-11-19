@@ -9,6 +9,7 @@ from src.psplines_gradient_method.general_functions import plot_outputs, plot_sp
 import numpy as np
 import time
 import argparse
+import json
 
 
 def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs, seed):
@@ -33,6 +34,8 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     with open(os.path.join(output_dir, 'log.txt'), 'w'):
         pass
 
+    if seed:
+        np.random.seed(seed)
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
     binned, stim_time = data.sample_data()
     true_likelihood, beta_s2_penalty = data.likelihood(tau_beta)
@@ -45,7 +48,8 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
     # Training parameters
 
-    likelihoods = []
+    losses = []
+    log_likelihoods = []
     alpha_loss_increase = []
     gamma_loss_increase = []
     c_loss_increase = []
@@ -71,8 +75,10 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
         result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_s, beta_first)
         beta_first = 1 - beta_first
-        likelihood = result["likelihood"]
-        likelihoods.append(likelihood)
+        loss = result["loss"]
+        log_likelihood = result["log_likelihood"]
+        losses.append(loss)
+        log_likelihoods.append(log_likelihood)
 
         alpha_loss_increase.append(result["alpha_loss_increase"])
         gamma_loss_increase.append(result["gamma_loss_increase"])
@@ -101,24 +107,27 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         total_time += elapsed_time  # Calculate the total time for training
 
         if epoch % 100 == 0:
-            output_str = f"Epoch {epoch}, Likelihood {likelihood}, Epoch Time: {epoch_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs\n"
+            s2 = np.exp(model.d2)
+            s2_norm = (1 / np.sum(s2)) * s2
+            output_str = (f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs\n"
+                          f"s_norm: {s2_norm.T}\n")
             print(output_str)
             with open(os.path.join(output_dir, 'log.txt'), 'a') as file:
                 file.write(output_str)
             epoch_time = 0  # Reset the epoch time
 
-        if epoch > 0 and epoch % 100 == 0:
-            plot_outputs(model, data, output_dir)
+            plot_outputs(model, data, output_dir, epoch)
             # Save the model object using pickle
             with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
                 pickle.dump(model, model_file)
 
-    plot_outputs(model, data, output_dir)
+    plot_outputs(model, data, output_dir, epoch)
     with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
         pickle.dump(model, model_file)
 
     metrics_results = {
-        "likelihoods": likelihoods,
+        "losses": losses,
+        "log_likelihoods": log_likelihoods,
         "alpha_loss_increase": alpha_loss_increase,
         "gamma_loss_increase": gamma_loss_increase,
         "c_loss_increase": c_loss_increase,
@@ -142,8 +151,7 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     training_results = {
         "model": model,
         "data": data,
-        "true_likelihood": true_likelihood,
-        "beta_s2_penalty": beta_s2_penalty
+        "true_likelihood": true_likelihood
     }
     return training_results, metrics_results, output_dir
 
@@ -179,3 +187,6 @@ if __name__ == "__main__":
     seed = np.random.randint(0, 2**32 - 1)
     training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi,
                                                          tau_beta, tau_s, beta_first, notes, num_epochs, seed)
+    log_likelihoods = metrics_results['log_likelihoods']
+    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w') as file:
+        json.dump(log_likelihoods, file)
