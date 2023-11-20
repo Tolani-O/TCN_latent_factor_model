@@ -96,12 +96,11 @@ class DataAnalyzer:
     def sample_data(self):
         return self.binned, self.time
 
-    def likelihood(self, tau_beta):
+    def likelihood(self):
         intensity = self.intensity
         binned = self.binned
         T = self.time.shape[0]
         Delta2 = csr_array(create_second_diff_matrix(T))
         dt = round(self.time[1] - self.time[0], 3)
         likelihood = np.sum(np.log(intensity) * binned - intensity * dt)
-        beta_s2_penalty = - tau_beta * 1/self.latent_factors.shape[0] * np.sum((Delta2 @ self.latent_factors.T)**2)
-        return likelihood, beta_s2_penalty
+        return likelihood

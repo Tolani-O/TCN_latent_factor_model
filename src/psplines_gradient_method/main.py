@@ -5,53 +5,67 @@ sys.path.append(os.path.abspath('.'))
 import pickle
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
-from src.psplines_gradient_method.general_functions import plot_outputs, plot_spikes, plot_intensity_and_latents
+from src.psplines_gradient_method.general_functions import plot_outputs, plot_spikes, plot_intensity_and_latents, \
+    plot_likelihoods, int_or_str
 import numpy as np
 import time
 import argparse
 import json
 
 
-def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs, seed):
-    # K = 100
-    # R = 15
-    # L = 3
-    # intensity_mltply = 25
-    # intensity_bias = 0.1
-    # # Training hyperparameters
-    # tau_psi = 10000
-    # tau_beta = 8000
-    # num_epochs = 1000
+
+def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs,
+         data_seed, param_seed, load_only, load_and_train):
 
     folder_name = (f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}'
                    f'_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_betaFirst{beta_first}'
-                   f'_seed{seed}_notes-{notes}_reparam')
+                   f'_dataSeed{data_seed}_paramSeed{param_seed}_notes-{notes}')
     print(f'folder_name: {folder_name}')
     output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
 
-    with open(os.path.join(output_dir, 'log.txt'), 'w'):
-        pass
-
-    if seed:
-        np.random.seed(seed)
+    np.random.seed(data_seed)
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
-    binned, stim_time = data.sample_data()
-    true_likelihood, beta_s2_penalty = data.likelihood(tau_beta)
+    true_likelihood = data.likelihood()
     print(f"True likelihood: {true_likelihood}")
-    plot_spikes(binned, output_dir)
-    plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
-    Y = binned  # K x T
-    degree = 3
-    # L = self.latent_factors.shape[0] #- 1
-    model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
-    model.init_ground_truth(data.latent_factors, data.latent_coupling)
 
-    # Training parameters
+    if load_only or load_and_train:
+        with open(os.path.join(output_dir, 'model.pkl'), 'rb') as model_file:
+            model = pickle.load(model_file)
+        with open(os.path.join(output_dir, 'log_likelihoods.json'), 'r') as file:
+            log_likelihoods = json.load(file)
+
+    if load_only:
+        metrics_results = {
+            "log_likelihoods": log_likelihoods
+        }
+        training_results = {
+            "model": model,
+            "data": data
+        }
+        return training_results, metrics_results
+
+    if not load_and_train:
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        with open(os.path.join(output_dir, 'log.txt'), 'w'):
+            pass
+
+        binned, stim_time = data.sample_data()
+        plot_spikes(binned, output_dir)
+        plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
+        Y = binned  # K x T
+        degree = 3
+        if param_seed == 'TRUTH':
+            model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
+            model.init_ground_truth(data.latent_factors, data.latent_coupling)
+        else:
+            np.random.seed(param_seed)
+            model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
+        log_likelihoods = []
 
     losses = []
-    log_likelihoods = []
     alpha_loss_increase = []
     gamma_loss_increase = []
     c_loss_increase = []
@@ -72,7 +86,8 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     chi_iters = []
     total_time = 0
     epoch_time = 0
-    for epoch in range(num_epochs):
+    start_epoch = len(log_likelihoods)
+    for epoch in range(start_epoch, start_epoch + num_epochs):
         start_time = time.time()  # Record the start time of the epoch
 
         result = model.log_obj_with_backtracking_line_search_and_time_warping(tau_psi, tau_beta, tau_s, beta_first)
@@ -124,9 +139,15 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
             with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
                 pickle.dump(model, model_file)
 
+            with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w') as file:
+                json.dump(log_likelihoods, file)
+
     plot_outputs(model, data, output_dir, epoch)
     with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
         pickle.dump(model, model_file)
+
+    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w') as file:
+        json.dump(log_likelihoods, file)
 
     metrics_results = {
         "losses": losses,
@@ -153,15 +174,17 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
 
     training_results = {
         "model": model,
-        "data": data,
-        "true_likelihood": true_likelihood
+        "data": data
     }
-    return training_results, metrics_results, output_dir
+    return training_results, metrics_results
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run the Python script from the command line.')
 
+    parser.add_argument('--plot_lkhd', type=int, default=0, help='')
+    parser.add_argument('--load_only', type=int, default=0, help='')
+    parser.add_argument('--load_and_train', type=int, default=0, help='')
     parser.add_argument('--tau_psi', type=int, default=1, help='Value for tau_psi')
     parser.add_argument('--tau_beta', type=int, default=5000, help='Value for tau_beta')
     parser.add_argument('--tau_s', type=int, default=15000, help='Value for tau_s')
@@ -173,8 +196,10 @@ if __name__ == "__main__":
     parser.add_argument('--L', type=int, default=3, help='Number of latent factors')
     parser.add_argument('--intensity_mltply', type=float, default=25, help='Latent factor intensity multiplier')
     parser.add_argument('--intensity_bias', type=float, default=1, help='Latent factor intensity bias')
+    parser.add_argument('--param_seed', type=int_or_str, default='', help='')
 
     args = parser.parse_args()
+    plot_lkhd = args.plot_lkhd
     K = args.K
     R = args.R
     L = args.L
@@ -186,10 +211,25 @@ if __name__ == "__main__":
     num_epochs = args.num_epochs
     beta_first = args.beta_first
     notes = args.notes
+    load_only = args.load_only
+    load_and_train = args.load_and_train
+    param_seed = args.param_seed
+    if param_seed == '':
+        param_seed = np.random.randint(0, 2 ** 32 - 1)
+    data_seed = np.random.randint(0, 2 ** 32 - 1)
 
-    seed = np.random.randint(0, 2**32 - 1)
-    training_results, metrics_results, output_dir = main(K, R, L, intensity_mltply, intensity_bias, tau_psi,
-                                                         tau_beta, tau_s, beta_first, notes, num_epochs, seed)
-    log_likelihoods = metrics_results['log_likelihoods']
-    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w') as file:
-        json.dump(log_likelihoods, file)
+    # override
+    data_seed = 4181387928
+    # param_seed = 'TRUTH'
+    # load_only = 1
+    # plot_lkhd = 1
+    # load_and_train = 1
+
+    if plot_lkhd:
+        np.random.seed(data_seed)
+        true_data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
+        plot_likelihoods(true_data, K, R, L, intensity_mltply, intensity_bias, data_seed)
+        sys.exit()
+    training_results, metrics_results = main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s,
+                                             beta_first, notes, num_epochs, data_seed, param_seed,
+                                             load_only, load_and_train)

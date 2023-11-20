@@ -84,7 +84,7 @@ class SpikeTrainModel:
                                                                time_warping=False,
                                                                alpha_factor=1e-2, gamma_factor=1e-2,
                                                                G_factor=1e-2, d_factor=1e-2,
-                                                               alpha=0.3, max_iters=4):
+                                                               alpha=0.1, max_iters=4):
         # define parameters
         K, L = self.chi.shape
         T = self.time.shape[0]
@@ -114,12 +114,11 @@ class SpikeTrainModel:
         if beta_first:
             # smooth_gamma
             ct = 0
-            learning_rate = 1
+            learning_rate = gamma_factor
             exp_chi = np.vstack([np.exp(self.chi[k] + self.c[k] - maxes[k]) for k in range(K)])  # variable
             likelihood_component = exp_chi.T @ np.vstack([(1/(sum_exps_chi_plus_gamma_B[k]) * self.Y[k] - 1/sum_exps_chi[k] * self.dt) @ b.transpose() for k, b in enumerate(B_sparse)])
             s2_component = s2_norm * beta_minus_max @ self.BDelta2TDelta2BT
             dlogL_dgamma = beta_minus_max * np.exp(max_gamma) * (likelihood_component - 2 * tau_beta * np.exp(max_gamma) * s2_component)
-            learning_rate *= gamma_factor
             while ct < max_iters:
                 gamma_plus = self.gamma + learning_rate * dlogL_dgamma
 

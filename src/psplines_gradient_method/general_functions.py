@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import figaspect
 from scipy.interpolate import BSpline
+import json
+import re
 
 
 def create_precision_matrix(P):
@@ -202,3 +204,55 @@ def plot_training_metrics():
     plt.plot(np.arange(0, num_epochs), chi_iters)
     plt.title('G Iters')
     plt.show()
+
+
+def load_likelihoods(K, R, L, intensity_mltply, intensity_bias, data_seed, param_seed=None):
+    base_dir = os.path.join(os.getcwd(), 'outputs')
+    if param_seed is None:
+        param_seed = r'\d+'
+    regex_pattern = fr"main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_tauBeta\d+_tauS\d+_iters\d+_betaFirst\d+_dataSeed{data_seed}_paramSeed({param_seed})_notes-.+"
+    pattern = re.compile(regex_pattern)
+    file_name = 'log_likelihoods.json'
+    all_data = []
+    all_param_seeds = []
+    for entry in os.listdir(base_dir):
+        full_path = os.path.join(base_dir, entry)
+        match = pattern.match(entry)
+        if os.path.isdir(full_path) and match:
+            json_path = os.path.join(full_path, file_name)
+            if os.path.exists(json_path):
+                print(f"Found '{file_name}' in '{full_path}'")
+                with open(json_path, 'r') as file:
+                    data = json.load(file)
+                    all_data.append(data)
+                all_param_seeds.append(match.group(1))
+    print(f"Found {len(all_data)} file(s)")
+
+    return all_data, all_param_seeds, base_dir
+
+
+def plot_likelihoods(true_data, K, R, L, intensity_mltply, intensity_bias, data_seed):
+    true_likelihood = true_data.likelihood()
+    print(f"True likelihood: {true_likelihood}")
+    all_data, all_param_seeds, output_dir = load_likelihoods(K, R, L, intensity_mltply, intensity_bias, data_seed)
+    ground_truth_start = load_likelihoods(K, R, L, intensity_mltply, intensity_bias, data_seed, 'TRUTH')[0][0]
+    max_length = max(len(data) for data in all_data)
+    true_likelihood_vector = [true_likelihood] * max_length
+    plt.figure(figsize=(10, 6))
+    plt.plot(true_likelihood_vector, label='True Likelihood')
+    plt.plot(ground_truth_start, label='Ground Truth Start')
+    for i, data in enumerate(all_data):
+        plt.plot(data, label=f'paramSeed {all_param_seeds[i]}', alpha=0.7)
+
+    plt.xlabel('Iterations')
+    plt.ylabel('Likelihood')
+    plt.title('Plot of likelihood values')
+    plt.legend()
+    plt.savefig(os.path.join(output_dir, f'LikelihoodTrajectories_dataSeed{data_seed}.png'))
+
+
+def int_or_str(value):
+    try:
+        return int(value)
+    except ValueError:
+        return value
