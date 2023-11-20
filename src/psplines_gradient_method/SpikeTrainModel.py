@@ -71,6 +71,15 @@ class SpikeTrainModel:
 
         return self
 
+    def init_ground_truth(self, latent_factors, latent_coupling):
+        V_inv = np.linalg.pinv(self.V.toarray().T)
+        beta = latent_factors @ V_inv.T
+        self.gamma = np.log(beta)
+        self.c = np.zeros_like(self.c)
+        self.chi = -1e10 * np.ones_like(self.chi)
+        self.chi[latent_coupling == 1] = 0
+
+
     def log_obj_with_backtracking_line_search_and_time_warping(self, tau_psi, tau_beta, tau_s, beta_first=1,
                                                                time_warping=False,
                                                                alpha_factor=1e-2, gamma_factor=1e-2,

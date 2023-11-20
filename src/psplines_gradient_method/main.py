@@ -39,12 +39,14 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
     binned, stim_time = data.sample_data()
     true_likelihood, beta_s2_penalty = data.likelihood(tau_beta)
+    print(f"True likelihood: {true_likelihood}")
     plot_spikes(binned, output_dir)
     plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
     Y = binned  # K x T
     degree = 3
     # L = self.latent_factors.shape[0] #- 1
     model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
+    model.init_ground_truth(data.latent_factors, data.latent_coupling)
 
     # Training parameters
 
@@ -109,7 +111,8 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         if epoch % 100 == 0:
             s2 = np.exp(model.d2)
             s2_norm = (1 / np.sum(s2)) * s2
-            output_str = (f"Epoch {epoch}, Loss {loss}, Epoch Time: {epoch_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs\n"
+            output_str = (f"Epoch: {epoch}, Loss: {loss}, Log Likelihood: {log_likelihood}, "
+                          f"Epoch Time: {epoch_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs\n"
                           f"s_norm: {s2_norm.T}\n")
             print(output_str)
             with open(os.path.join(output_dir, 'log.txt'), 'a') as file:

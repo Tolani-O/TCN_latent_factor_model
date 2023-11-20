@@ -18,7 +18,6 @@ class DataAnalyzer:
                    intensity_mltply=15, intensity_bias=5, max_offset=0):
         self.time = np.arange(0, T, 1) / 100
         self.latent_factors = self.generate_latent_factors(intensity_type, intensity_mltply, intensity_bias)
-        # np.random.seed(0)
         self.intensity, self.binned, self.latent_coupling = self.generate_spike_trains(coeff, ratio, K, R, max_offset)
         return self
 
