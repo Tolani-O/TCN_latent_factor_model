@@ -6,20 +6,20 @@ import pickle
 from src.simulate_data import DataAnalyzer
 from src.psplines_gradient_method.SpikeTrainModel import SpikeTrainModel
 from src.psplines_gradient_method.general_functions import plot_outputs, plot_spikes, plot_intensity_and_latents, \
-    plot_likelihoods, int_or_str
+    plot_likelihoods, int_or_str, write_outputs
 import numpy as np
 import time
 import argparse
-import json
-
+import ijson
 
 
 def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, beta_first, notes, num_epochs,
          data_seed, param_seed, load_only, load_and_train):
 
-    folder_name = (f'main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}'
+    folder_name = (f'paramSeed{param_seed}_dataSeed{data_seed}_L{L}_K{K}_R{R}'
+                   f'_int.mltply{intensity_mltply}_int.add{intensity_bias}'
                    f'_tauBeta{tau_beta}_tauS{tau_s}_iters{num_epochs}_betaFirst{beta_first}'
-                   f'_dataSeed{data_seed}_paramSeed{param_seed}_notes-{notes}')
+                   f'_notes-{notes}')
     print(f'folder_name: {folder_name}')
     output_dir = os.path.join(os.getcwd(), 'outputs', folder_name)
 
@@ -27,17 +27,17 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     data = DataAnalyzer().initialize(K=K, R=R, intensity_mltply=intensity_mltply, intensity_bias=intensity_bias, max_offset=0)
     true_likelihood = data.likelihood()
     print(f"True likelihood: {true_likelihood}")
+    start_epoch = 0
 
     if load_only or load_and_train:
         with open(os.path.join(output_dir, 'model.pkl'), 'rb') as model_file:
             model = pickle.load(model_file)
-        with open(os.path.join(output_dir, 'log_likelihoods.json'), 'r') as file:
-            log_likelihoods = json.load(file)
+        with open(os.path.join(output_dir, 'log_likelihoods.json'), 'rb') as file:
+            for item in ijson.items(file, 'item'):
+                start_epoch += 1
 
     if load_only:
-        metrics_results = {
-            "log_likelihoods": log_likelihoods
-        }
+        metrics_results = {}
         training_results = {
             "model": model,
             "data": data
@@ -52,6 +52,16 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         with open(os.path.join(output_dir, 'log.txt'), 'w'):
             pass
 
+        with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w+b') as file:
+            file.write(b'[]')
+
+        command_str = (f"python src/psplines_gradient_method/main.py "
+                       f"--K {K} --R {R} --L {L} --intensity_mltply {intensity_mltply} --intensity_bias {intensity_bias} "
+                       f"--tau_beta {tau_beta} --tau_s {tau_s} --num_epochs {num_epochs} --beta_first {beta_first} --notes {notes} "
+                       f"--data_seed {data_seed} --param_seed {param_seed} --load_and_train 1")
+        with open(os.path.join(output_dir, 'command.txt'), 'w') as file:
+            file.write(command_str)
+
         binned, stim_time = data.sample_data()
         plot_spikes(binned, output_dir)
         plot_intensity_and_latents(data.time, data.latent_factors, data.intensity, output_dir)
@@ -63,9 +73,9 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         else:
             np.random.seed(param_seed)
             model = SpikeTrainModel(Y, stim_time).initialize_for_time_warping(L, degree)
-        log_likelihoods = []
 
     losses = []
+    log_likelihoods = []
     alpha_loss_increase = []
     gamma_loss_increase = []
     c_loss_increase = []
@@ -86,7 +96,6 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
     chi_iters = []
     total_time = 0
     epoch_time = 0
-    start_epoch = len(log_likelihoods)
     for epoch in range(start_epoch, start_epoch + num_epochs):
         start_time = time.time()  # Record the start time of the epoch
 
@@ -94,29 +103,29 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
         beta_first = 1 - beta_first
         loss = result["loss"]
         log_likelihood = result["log_likelihood"]
-        losses.append(loss)
+        # losses.append(loss)
         log_likelihoods.append(log_likelihood)
 
-        alpha_loss_increase.append(result["alpha_loss_increase"])
-        gamma_loss_increase.append(result["gamma_loss_increase"])
-        c_loss_increase.append(result["c_loss_increase"])
-        d2_loss_increase.append(result["d2_loss_increase"])
-        zeta_loss_increase.append(result["zeta_loss_increase"])
-        chi_loss_increase.append(result["chi_loss_increase"])
-
-        alpha_learning_rate.append(result["smooth_alpha"])
-        gamma_learning_rate.append(result["smooth_gamma"])
-        c_learning_rate.append(result["smooth_c"])
-        d2_learning_rate.append(result["smooth_d2"])
-        zeta_learning_rate.append(result["smooth_zeta"])
-        chi_learning_rate.append(result["smooth_chi"])
-
-        alpha_iters.append(result["iters_alpha"])
-        gamma_iters.append(result["iters_gamma"])
-        c_iters.append(result["iters_c"])
-        d2_iters.append(result["iters_d2"])
-        zeta_iters.append(result["iters_zeta"])
-        chi_iters.append(result["iters_chi"])
+        # alpha_loss_increase.append(result["alpha_loss_increase"])
+        # gamma_loss_increase.append(result["gamma_loss_increase"])
+        # c_loss_increase.append(result["c_loss_increase"])
+        # d2_loss_increase.append(result["d2_loss_increase"])
+        # zeta_loss_increase.append(result["zeta_loss_increase"])
+        # chi_loss_increase.append(result["chi_loss_increase"])
+        #
+        # alpha_learning_rate.append(result["smooth_alpha"])
+        # gamma_learning_rate.append(result["smooth_gamma"])
+        # c_learning_rate.append(result["smooth_c"])
+        # d2_learning_rate.append(result["smooth_d2"])
+        # zeta_learning_rate.append(result["smooth_zeta"])
+        # chi_learning_rate.append(result["smooth_chi"])
+        #
+        # alpha_iters.append(result["iters_alpha"])
+        # gamma_iters.append(result["iters_gamma"])
+        # c_iters.append(result["iters_c"])
+        # d2_iters.append(result["iters_d2"])
+        # zeta_iters.append(result["iters_zeta"])
+        # chi_iters.append(result["iters_chi"])
 
         end_time = time.time()  # Record the end time of the epoch
         elapsed_time = end_time - start_time  # Calculate the elapsed time for the epoch
@@ -130,24 +139,13 @@ def main(K, R, L, intensity_mltply, intensity_bias, tau_psi, tau_beta, tau_s, be
                           f"Epoch Time: {epoch_time / 60:.2f} mins, Total Time: {total_time / (60 * 60):.2f} hrs\n"
                           f"s_norm: {s2_norm.T}\n")
             print(output_str)
-            with open(os.path.join(output_dir, 'log.txt'), 'a') as file:
-                file.write(output_str)
-            epoch_time = 0  # Reset the epoch time
-
+            epoch_time = 0
             plot_outputs(model, data, output_dir, epoch)
-            # Save the model object using pickle
-            with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
-                pickle.dump(model, model_file)
-
-            with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w') as file:
-                json.dump(log_likelihoods, file)
+            write_outputs(output_dir, log_likelihoods, epoch==0, model, output_str)
+            log_likelihoods = []
 
     plot_outputs(model, data, output_dir, epoch)
-    with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
-        pickle.dump(model, model_file)
-
-    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'w') as file:
-        json.dump(log_likelihoods, file)
+    write_outputs(output_dir, log_likelihoods, 0, model, output_str)
 
     metrics_results = {
         "losses": losses,

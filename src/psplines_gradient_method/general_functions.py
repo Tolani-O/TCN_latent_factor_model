@@ -1,4 +1,5 @@
 import os
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import figaspect
@@ -210,7 +211,7 @@ def load_likelihoods(K, R, L, intensity_mltply, intensity_bias, data_seed, param
     base_dir = os.path.join(os.getcwd(), 'outputs')
     if param_seed is None:
         param_seed = r'\d+'
-    regex_pattern = fr"main_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_tauBeta\d+_tauS\d+_iters\d+_betaFirst\d+_dataSeed{data_seed}_paramSeed({param_seed})_notes-.+"
+    regex_pattern = fr"paramSeed({param_seed})_dataSeed{data_seed}_L{L}_K{K}_R{R}_int.mltply{intensity_mltply}_int.add{intensity_bias}_tauBeta\d+_tauS\d+_iters\d+_betaFirst\d+_notes-.+"
     pattern = re.compile(regex_pattern)
     file_name = 'log_likelihoods.json'
     all_data = []
@@ -249,6 +250,24 @@ def plot_likelihoods(true_data, K, R, L, intensity_mltply, intensity_bias, data_
     plt.title('Plot of likelihood values')
     plt.legend()
     plt.savefig(os.path.join(output_dir, f'LikelihoodTrajectories_dataSeed{data_seed}.png'))
+
+
+def write_outputs(output_dir, log_likelihoods, is_empty, model, output_str):
+    with open(os.path.join(output_dir, 'log.txt'), 'a') as file:
+        file.write(output_str)
+    with open(os.path.join(output_dir, 'model.pkl'), 'wb') as model_file:
+        pickle.dump(model, model_file)
+    with open(os.path.join(output_dir, 'log_likelihoods.json'), 'r+b') as file:
+        _ = file.seek(-1, 2)  # Go to the one character before the end of the file
+        if file.read(1) != b']':
+            raise ValueError("JSON file must end with a ']'")
+        _ = file.seek(-1, 2)  # Go back to the position just before the ']'
+        for item in log_likelihoods:
+            if not is_empty:
+                _ = file.write(b',' + json.dumps(item).encode('utf-8'))
+            else:
+                _ = file.write(json.dumps(item).encode('utf-8'))
+        _ = file.write(b']')
 
 
 def int_or_str(value):
