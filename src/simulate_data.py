@@ -1,6 +1,4 @@
 import numpy as np
-from scipy.sparse import csr_array
-from src.psplines_gradient_method.general_functions import create_second_diff_matrix
 
 
 class DataAnalyzer:
@@ -99,8 +97,6 @@ class DataAnalyzer:
     def likelihood(self):
         intensity = self.intensity
         binned = self.binned
-        T = self.time.shape[0]
-        Delta2 = csr_array(create_second_diff_matrix(T))
         dt = round(self.time[1] - self.time[0], 3)
         likelihood = np.sum(np.log(intensity) * binned - intensity * dt)
         return likelihood
